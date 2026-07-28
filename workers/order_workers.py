@@ -2,7 +2,10 @@ import asyncio
 import logging
 import random
 
+import httpx
 from pyzeebe import Job, JobController, ZeebeWorker, create_insecure_channel
+
+PAYMENT_SERVICE_URL = "http://localhost:8001/charge"
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("order-workers")
@@ -31,11 +34,24 @@ async def main() -> None:
         return {"inStock": in_stock}
 
     @worker.task(task_type="charge-payment", exception_handler=on_error)
-    def charge_payment(orderId: str, quantity: int) -> dict:
-        amount = round(quantity * 19.99, 2)
-        payment_id = f"PMT-{random.randint(10000, 99999)}"
-        logger.info("Charged order %s: $%.2f (%s)", orderId, amount, payment_id)
-        return {"paymentId": payment_id, "amountCharged": amount}
+    async def charge_payment(orderId: str, quantity: int) -> dict:
+        # Delegates to the payment_service.py microservice over plain HTTP.
+        # This worker is the only thing that knows Camunda exists -- the
+        # payment service itself is a normal FastAPI app with no Zeebe code.
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                PAYMENT_SERVICE_URL,
+                json={"order_id": orderId, "quantity": quantity},
+                timeout=5.0,
+            )
+            response.raise_for_status()
+            payment = response.json()
+
+        logger.info(
+            "Charged order %s via payment service: $%.2f (%s)",
+            orderId, payment["amount_charged"], payment["payment_id"],
+        )
+        return {"paymentId": payment["payment_id"], "amountCharged": payment["amount_charged"]}
 
     @worker.task(task_type="ship-order", exception_handler=on_error)
     def ship_order(orderId: str) -> dict:

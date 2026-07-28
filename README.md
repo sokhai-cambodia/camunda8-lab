@@ -62,6 +62,16 @@ Leave this running in its own terminal — it's polling Zeebe for `validate-orde
 while it starts: notice each `@worker.task(task_type=...)` maps 1:1 to a service task's
 `zeebe:taskDefinition type` in the BPMN file.
 
+**Bonus — integrating a real microservice:** `payment_service.py` is a standalone
+FastAPI app (its own port, its own process) that knows nothing about Camunda. The
+`charge-payment` worker in `order_workers.py` calls it over plain HTTP with `httpx`,
+the same way it would call any existing internal service. Start it in its own terminal:
+```powershell
+uvicorn payment_service:app --port 8001
+```
+This is the pattern for wiring Camunda to code you already have: write a thin job worker
+that calls your service, rather than rewriting the service itself.
+
 ## Block 5 — Run it end to end (15 min)
 
 In a **second** terminal (keep workers running):
