@@ -1,3 +1,4 @@
+<meta charset="utf-8" />
 <title>Camunda 8 Demo — Order Fulfillment</title>
 <meta name="description" content="Live slide deck for a Camunda 8 order-fulfillment demo: BPMN, Zeebe job workers, Operate, and incident recovery." />
 <style>
@@ -187,6 +188,7 @@
   .diagram-wrap svg { display: block; min-width: 720px; }
   .flow-box { fill: var(--panel); stroke: var(--line); }
   .flow-box.accent { stroke: var(--accent); stroke-width: 2; }
+  .flow-box.connector { stroke-dasharray: 4 3; }
   .flow-event { fill: none; stroke: var(--ink); stroke-width: 2; }
   .flow-event.end { fill: var(--ink); }
   .flow-gateway { fill: var(--panel); stroke: var(--ink); stroke-width: 2; }
@@ -194,7 +196,7 @@
   .flow-text { font-family: var(--font-body); font-size: 15px; fill: var(--ink); }
   .flow-label { font-family: var(--font-display); font-size: 11px; fill: var(--muted); letter-spacing: 0.04em; }
 
-  .arch { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: calc(var(--step)*4); max-width: 900px; }
+  .arch { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: calc(var(--step)*4); max-width: 900px; }
   .arch .card {
     background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
     padding: 16px 14px; display: flex; flex-direction: column; gap: 6px;
@@ -287,7 +289,7 @@
   <section class="slide">
     <p class="eyebrow">Live Demo</p>
     <h1>Camunda 8,<br>running for real.</h1>
-    <p class="lede">One BPMN diagram, four Python workers, and a browser tab. We'll deploy it, break it, and fix it — live.</p>
+    <p class="lede">One BPMN diagram, a Python worker, a built-in connector, and a browser tab. We'll deploy it, break it, and fix it — live.</p>
     <p class="content mono" style="color:var(--muted); font-size:0.95rem;">Zeebe · Operate · Tasklist &nbsp;—&nbsp; localhost:8080</p>
   </section>
 
@@ -312,6 +314,7 @@
     <div class="arch">
       <div class="card core"><b>BPMN</b><span>The diagram. Defines steps, order, and decisions.</span></div>
       <div class="card core"><b>Zeebe</b><span>The engine. Runs instances, scales horizontally.</span></div>
+      <div class="card core"><b>Connectors</b><span>Prebuilt steps, configured not coded. Powers Charge Payment today.</span></div>
       <div class="card"><b>Operate</b><span>Watch every instance live. See exactly where it's stuck.</span></div>
       <div class="card"><b>Tasklist</b><span>Where humans complete the manual steps.</span></div>
     </div>
@@ -320,34 +323,69 @@
   <!-- 4 : WORKER PATTERN -->
   <section class="slide">
     <p class="eyebrow">How a step runs</p>
-    <h2>Workers pull work.</h2>
-    <p class="lede">Zeebe never calls your code directly — a worker <b style="color:var(--ink)">polls</b> for jobs of a given type. That's what keeps it polyglot.</p>
-    <div class="diagram-wrap">
-      <svg viewBox="0 0 760 160" width="760" height="160">
-        <rect class="flow-box accent" x="20" y="55" width="200" height="50" rx="6"/>
-        <text class="flow-text" x="120" y="76" text-anchor="middle">Service Task</text>
-        <text class="flow-label" x="120" y="94" text-anchor="middle">type: charge-payment</text>
+    <h2>Code, or configuration.</h2>
+    <p class="lede">Two service tasks in the same diagram, wired two different ways — same engine, same contract.</p>
 
-        <path class="flow-line" d="M220 68 L 420 68" marker-end="url(#arr)"/>
-        <text class="flow-label" x="320" y="60" text-anchor="middle">activates job</text>
+    <div style="margin-top: calc(var(--step) * 4); display:flex; flex-direction:column; gap: calc(var(--step) * 4); max-width: 800px;">
+      <div>
+        <span class="tag" style="color:var(--muted);">JOB WORKER &middot; Ship Order</span>
+        <div class="diagram-wrap" style="margin-top:10px;">
+          <svg viewBox="0 0 760 110" width="760" height="110">
+            <rect class="flow-box accent" x="10" y="30" width="170" height="50" rx="6"/>
+            <text class="flow-text" x="95" y="51" text-anchor="middle">Service Task</text>
+            <text class="flow-label" x="95" y="69" text-anchor="middle">type: ship-order</text>
 
-        <path class="flow-line" d="M420 92 L 220 92" marker-end="url(#arr)"/>
-        <text class="flow-label" x="320" y="116" text-anchor="middle">completes job</text>
+            <path class="flow-line" d="M180 43 L 330 43" marker-end="url(#arrWorker)"/>
+            <text class="flow-label" x="255" y="35" text-anchor="middle">polls &amp; activates</text>
+            <path class="flow-line" d="M330 67 L 180 67" marker-end="url(#arrWorker)"/>
+            <text class="flow-label" x="255" y="89" text-anchor="middle">completes job</text>
 
-        <rect class="flow-box" x="420" y="55" width="200" height="50" rx="6"/>
-        <text class="flow-text" x="520" y="76" text-anchor="middle">Python Worker</text>
-        <text class="flow-label" x="520" y="94" text-anchor="middle">order_workers.py</text>
+            <rect class="flow-box" x="330" y="30" width="190" height="50" rx="6"/>
+            <text class="flow-text" x="425" y="51" text-anchor="middle">Python Worker</text>
+            <text class="flow-label" x="425" y="69" text-anchor="middle">workers/order_workers.py</text>
 
-        <path class="flow-line" d="M620 80 L 720 80" marker-end="url(#arr)"/>
-        <text class="flow-text" x="738" y="85" text-anchor="middle">gRPC</text>
-        <text class="flow-label" x="738" y="100" text-anchor="middle">:26500</text>
+            <path class="flow-line" d="M520 55 L 620 55" marker-end="url(#arrWorker)"/>
+            <text class="flow-label" x="655" y="59" text-anchor="middle">gRPC :26500</text>
 
-        <defs>
-          <marker id="arr" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
-            <path d="M0,0 L6,3 L0,6 z" fill="currentColor" style="color:var(--muted)"/>
-          </marker>
-        </defs>
-      </svg>
+            <defs>
+              <marker id="arrWorker" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+                <path d="M0,0 L6,3 L0,6 z" fill="currentColor" style="color:var(--muted)"/>
+              </marker>
+            </defs>
+          </svg>
+        </div>
+      </div>
+
+      <div>
+        <span class="tag" style="color:var(--accent); border-color:var(--accent);">CONNECTOR &middot; Charge Payment</span>
+        <div class="diagram-wrap" style="margin-top:10px;">
+          <svg viewBox="0 0 760 110" width="760" height="110">
+            <rect class="flow-box" x="10" y="30" width="180" height="50" rx="6"/>
+            <text class="flow-text" x="100" y="51" text-anchor="middle">Service Task</text>
+            <text class="flow-label" x="100" y="69" text-anchor="middle">type: http-json:1</text>
+
+            <path class="flow-line" d="M190 55 L 330 55" marker-end="url(#arrConn)"/>
+            <text class="flow-label" x="260" y="47" text-anchor="middle">URL + body, configured</text>
+
+            <rect class="flow-box accent" x="330" y="30" width="170" height="50" rx="6"/>
+            <text class="flow-text" x="415" y="51" text-anchor="middle">REST Connector</text>
+            <text class="flow-label" x="415" y="69" text-anchor="middle">built-in, zero code</text>
+
+            <path class="flow-line" d="M500 55 L 610 55" marker-end="url(#arrConn)"/>
+            <text class="flow-label" x="555" y="47" text-anchor="middle">HTTP POST</text>
+
+            <rect class="flow-box" x="610" y="30" width="140" height="50" rx="6"/>
+            <text class="flow-text" x="680" y="51" text-anchor="middle">payment_service</text>
+            <text class="flow-label" x="680" y="69" text-anchor="middle">:8001/charge</text>
+
+            <defs>
+              <marker id="arrConn" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+                <path d="M0,0 L6,3 L0,6 z" fill="currentColor" style="color:var(--muted)"/>
+              </marker>
+            </defs>
+          </svg>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -366,8 +404,9 @@
         <polygon class="flow-gateway" points="290,70 316,44 342,70 316,96"/>
         <text class="flow-text" x="316" y="30" text-anchor="middle">In Stock?</text>
 
-        <rect class="flow-box accent" x="390" y="48" width="130" height="44" rx="5"/>
-        <text class="flow-text" x="455" y="75" text-anchor="middle">Charge Payment</text>
+        <rect class="flow-box accent connector" x="390" y="48" width="130" height="44" rx="5"/>
+        <text class="flow-text" x="455" y="70" text-anchor="middle">Charge Payment</text>
+        <text class="flow-label" x="455" y="84" text-anchor="middle">connector</text>
 
         <rect class="flow-box accent" x="570" y="48" width="120" height="44" rx="5"/>
         <text class="flow-text" x="630" y="75" text-anchor="middle">Ship Order</text>
@@ -403,6 +442,7 @@
   <section class="slide">
     <p class="eyebrow">Run of show</p>
     <h2>Watch it live.</h2>
+    <p class="lede" style="margin-top:0;">Three terminals running: the job worker, <span class="mono">payment_service</span> (:8001), and <span class="mono">order_service</span> (:8000).</p>
     <div class="content">
       <ol class="steps">
         <li>
@@ -412,7 +452,7 @@
         </li>
         <li>
           <p class="step-title">Follow it in Operate</p>
-          <p class="step-body">Tokens move through the diagram as each worker completes a job — <span class="mono">localhost:8080/operate</span></p>
+          <p class="step-body">Tokens move through the diagram as the worker and the connector each complete their jobs — <span class="mono">localhost:8080/operate</span></p>
         </li>
         <li>
           <p class="step-title">Complete the human step</p>
