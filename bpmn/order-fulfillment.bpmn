@@ -31,9 +31,20 @@
       <bpmn:outgoing>Flow_Gateway_Backorder</bpmn:outgoing>
     </bpmn:exclusiveGateway>
 
-    <bpmn:serviceTask id="Task_ChargePayment" name="Charge Payment">
+    <bpmn:serviceTask id="Task_ChargePayment" name="Charge Payment" zeebe:modelerTemplate="io.camunda.connectors.HttpJson.v2">
       <bpmn:extensionElements>
-        <zeebe:taskDefinition type="charge-payment" />
+        <!-- Built-in REST connector: calls payment_service.py directly over HTTP.
+             No custom job worker needed for this step; see order_workers.py
+             for the contrast (charge-payment used to be handled there). -->
+        <zeebe:taskDefinition type="io.camunda:http-json:1" retries="3" />
+        <zeebe:ioMapping>
+          <zeebe:input target="method" source="POST" />
+          <zeebe:input target="url" source="http://host.docker.internal:8001/charge" />
+          <zeebe:input target="body" source="={ &#34;order_id&#34;: orderId, &#34;quantity&#34;: quantity }" />
+        </zeebe:ioMapping>
+        <zeebe:taskHeaders>
+          <zeebe:header key="resultExpression" value="={ paymentId: response.body.payment_id, amountCharged: response.body.amount_charged }" />
+        </zeebe:taskHeaders>
       </bpmn:extensionElements>
       <bpmn:incoming>Flow_Gateway_Charge</bpmn:incoming>
       <bpmn:outgoing>Flow_Charge_Ship</bpmn:outgoing>

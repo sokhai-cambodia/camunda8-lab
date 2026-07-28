@@ -9,7 +9,7 @@ from pyzeebe import ZeebeClient, create_insecure_channel
 BPMN_PATH = Path(__file__).resolve().parent.parent / "bpmn" / "order-fulfillment.bpmn"
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-logger = logging.getLogger("order-api")
+logger = logging.getLogger("order-service")
 
 state: dict[str, ZeebeClient] = {}
 

@@ -40,6 +40,35 @@ services:
       camunda-data-init:
         condition: service_completed_successfully
 
+  # Camunda Connectors - executes outbound connector logic (e.g. the built-in
+  # REST connector our "Charge Payment" task uses to call payment_service.py
+  # on the host, via host.docker.internal).
+  connectors:
+    image: camunda/connectors-bundle:8.9.6 # matches CAMUNDA_VERSION's 8.9 line
+    container_name: connectors
+    ports:
+      - "8086:8080"
+    env_file:
+      - connector-secrets.txt
+      - path: .env
+        required: true
+    mem_limit: 512m
+    restart: on-failure
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8080/actuator/health/readiness"]
+      interval: 30s
+      timeout: 1s
+      retries: 5
+      start_period: 30s
+    configs:
+      - source: connectors-config
+        target: application.yaml
+    networks:
+      - camunda
+    depends_on:
+      orchestration:
+        condition: service_healthy
+
 volumes:
   camunda:
   camunda-data:
@@ -51,3 +80,10 @@ networks:
 configs:
   orchestration-config:
     file: ./configuration/application-h2.yaml
+  connectors-config:
+    content: |
+      camunda:
+        client:
+          mode: self-managed
+          grpc-address: http://orchestration:26500
+          rest-address: http://orchestration:8080
