@@ -68,11 +68,17 @@ In a **second** terminal (keep workers running):
 ```powershell
 cd workers
 .venv\Scripts\Activate.ps1
-python start_order.py ORD-1001 5
+uvicorn order_api:app --port 8000
 ```
 
-This deploys the BPMN file and starts an instance with `quantity=5` (≤10 → in stock →
-happy path). Now:
+On startup this deploys the BPMN file once and exposes `POST /orders`. Open
+http://localhost:8000/docs for the interactive Swagger UI — good for the demo, since you
+can trigger orders by clicking "Try it out" instead of typing curl live.
+
+Start the happy path (`quantity=5`, ≤10 → in stock):
+```powershell
+curl -X POST http://localhost:8000/orders -H "Content-Type: application/json" -d "{\"order_id\":\"ORD-1001\",\"quantity\":5}"
+```
 1. Watch the worker terminal log each step.
 2. Open Operate → click the running instance → watch tokens move through the diagram live.
 3. Open Tasklist → find the "Confirm Delivery" task assigned to `demo` → complete it.
@@ -80,7 +86,7 @@ happy path). Now:
 
 Try the backorder path too:
 ```powershell
-python start_order.py ORD-1002 15
+curl -X POST http://localhost:8000/orders -H "Content-Type: application/json" -d "{\"order_id\":\"ORD-1002\",\"quantity\":15}"
 ```
 `quantity=15` > 10 → gateway routes to *Notify Backorder* instead.
 
@@ -90,7 +96,7 @@ This is the part that actually impresses a technical audience: show what happens
 something breaks.
 
 ```powershell
-python start_order.py ORD-1003 0
+curl -X POST http://localhost:8000/orders -H "Content-Type: application/json" -d "{\"order_id\":\"ORD-1003\",\"quantity\":0}"
 ```
 
 `quantity=0` makes `validate_order` raise an unhandled exception. In Operate:

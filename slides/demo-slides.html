@@ -406,9 +406,9 @@
     <div class="content">
       <ol class="steps">
         <li>
-          <p class="step-title">Deploy &amp; start an instance</p>
-          <p class="step-body">Happy path — plenty of stock.</p>
-          <pre>python start_order.py ORD-1001 5</pre>
+          <p class="step-title">Start an instance via the API</p>
+          <p class="step-body">Happy path — plenty of stock. Triggered from <span class="mono">localhost:8000/docs</span> or curl.</p>
+          <pre>POST /orders {"order_id":"ORD-1001","quantity":5}</pre>
         </li>
         <li>
           <p class="step-title">Follow it in Operate</p>
@@ -421,7 +421,7 @@
         <li>
           <p class="step-title">Now the other branch</p>
           <p class="step-body">Quantity above 10 routes to backorder instead of payment.</p>
-          <pre>python start_order.py ORD-1002 15</pre>
+          <pre>POST /orders {"order_id":"ORD-1002","quantity":15}</pre>
         </li>
       </ol>
     </div>
@@ -432,7 +432,7 @@
     <p class="eyebrow">When it breaks</p>
     <h2>No crash. No redeploy.</h2>
     <p class="lede">Bad input reaches the worker — instead of losing the instance, Zeebe holds it exactly where it failed.</p>
-    <pre>python start_order.py ORD-1003 0</pre>
+    <pre>POST /orders {"order_id":"ORD-1003","quantity":0}</pre>
     <div class="incident-card">
       <p class="label">Incident · Task_ValidateOrder</p>
       <p class="msg">Failed job. Error: Invalid quantity 0 for order ORD-1003</p>
