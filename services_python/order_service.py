@@ -1,16 +1,10 @@
 import logging
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 import httpx
 from fastapi import FastAPI
 from pydantic import BaseModel
 from pyzeebe import ZeebeClient, create_insecure_channel
-
-LAB_ROOT = Path(__file__).resolve().parent.parent
-BPMN_PATH = LAB_ROOT / "bpmn" / "order-fulfillment.bpmn"
-DMN_PATH = LAB_ROOT / "dmn" / "stock-check.dmn"
-FORM_PATH = LAB_ROOT / "forms" / "confirm-delivery.form"
 
 # The connectors container's inbound webhook endpoint -- posting here is what
 # correlates the "Order Canceled" boundary message event on Confirm Delivery.
@@ -27,10 +21,10 @@ async def lifespan(app: FastAPI):
     # Channel/client must be created inside the running event loop (uvicorn's),
     # same reasoning as order_workers.py: pyzeebe's grpc streams bind to
     # whatever loop is running when they're created.
+    # Deployment is handled separately (see scripts/deploy.py) so BPMN/DMN/form
+    # edits don't require restarting this service.
     channel = create_insecure_channel(grpc_address="localhost:26500")
     client = ZeebeClient(channel)
-    logger.info("Deploying %s, %s, %s ...", BPMN_PATH.name, DMN_PATH.name, FORM_PATH.name)
-    await client.deploy_resource(str(BPMN_PATH), str(DMN_PATH), str(FORM_PATH))
     state["client"] = client
     yield
     state.clear()
