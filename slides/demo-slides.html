@@ -1,6 +1,6 @@
 <meta charset="utf-8" />
 <title>Camunda 8 Demo — Order Fulfillment</title>
-<meta name="description" content="Live slide deck for a Camunda 8 order-fulfillment demo: BPMN, Zeebe job workers, Operate, and incident recovery." />
+<meta name="description" content="Live slide deck for a Camunda 8 order-fulfillment demo: BPMN, DMN, Forms, job workers, in/outbound connectors, boundary events, Operate, and incident recovery." />
 <style>
   :root {
     --ink: #12151b;
@@ -161,7 +161,9 @@
     width: 36px; height: 36px;
     border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
+    grid-column: 1; grid-row: 1 / -1;
   }
+  .steps li > .step-title, .steps li > .step-body, .steps li > pre { grid-column: 2; }
   .steps .step-title { font-size: clamp(1.05rem, 1.8vw, 1.3rem); font-weight: 600; margin: 0 0 4px; }
   .steps .step-body { color: var(--muted); font-size: 1rem; margin: 0; }
 
@@ -314,7 +316,11 @@
     <div class="arch">
       <div class="card core"><b>BPMN</b><span>The diagram. Defines steps, order, and decisions.</span></div>
       <div class="card core"><b>Zeebe</b><span>The engine. Runs instances, scales horizontally.</span></div>
-      <div class="card core"><b>Connectors</b><span>Prebuilt steps, configured not coded. Powers Charge Payment today.</span></div>
+      <div class="card core"><b>DMN</b><span>Decision tables, modeled separately. A business rule task calls one.</span></div>
+      <div class="card"><b>Connectors</b><span>Prebuilt steps, configured not coded — both outbound (Charge Payment) and inbound (webhook).</span></div>
+      <div class="card"><b>Forms</b><span>A JSON schema on a user task — Tasklist renders it, no frontend code.</span></div>
+      <div class="card"><b>Boundary events</b><span>Timer, error, and message — three ways to interrupt a task.</span></div>
+      <div class="card"><b>Multi-instance</b><span>Run one activity per element of a collection, not once per instance.</span></div>
       <div class="card"><b>Operate</b><span>Watch every instance live. See exactly where it's stuck.</span></div>
       <div class="card"><b>Tasklist</b><span>Where humans complete the manual steps.</span></div>
     </div>
@@ -324,7 +330,7 @@
   <section class="slide">
     <p class="eyebrow">How a step runs</p>
     <h2>Code, or configuration.</h2>
-    <p class="lede">Two service tasks in the same diagram, wired two different ways — same engine, same contract.</p>
+    <p class="lede">Three tasks in the same diagram, wired three different ways — same engine, same contract.</p>
 
     <div style="margin-top: calc(var(--step) * 4); display:flex; flex-direction:column; gap: calc(var(--step) * 4); max-width: 800px;">
       <div>
@@ -386,6 +392,37 @@
           </svg>
         </div>
       </div>
+
+      <div>
+        <span class="tag" style="color:var(--accent); border-color:var(--accent);">INBOUND CONNECTOR &middot; Order Canceled</span>
+        <div class="diagram-wrap" style="margin-top:10px;">
+          <svg viewBox="0 0 860 110" width="860" height="110">
+            <rect class="flow-box" x="10" y="30" width="150" height="50" rx="6"/>
+            <text class="flow-text" x="85" y="51" text-anchor="middle">order_service</text>
+            <text class="flow-label" x="85" y="69" text-anchor="middle">POST /cancel</text>
+
+            <path class="flow-line" d="M160 55 L 300 55" marker-end="url(#arrInbound)"/>
+            <text class="flow-label" x="230" y="47" text-anchor="middle">HTTP POST</text>
+
+            <rect class="flow-box accent" x="300" y="30" width="170" height="50" rx="6"/>
+            <text class="flow-text" x="385" y="51" text-anchor="middle">Webhook Connector</text>
+            <text class="flow-label" x="385" y="69" text-anchor="middle">/inbound/order-canceled</text>
+
+            <path class="flow-line" d="M470 55 L 660 55" marker-end="url(#arrInbound)"/>
+            <text class="flow-label" x="565" y="47" text-anchor="middle">correlates by orderId</text>
+
+            <rect class="flow-box connector" x="660" y="30" width="180" height="50" rx="6"/>
+            <text class="flow-text" x="750" y="51" text-anchor="middle">Boundary Event</text>
+            <text class="flow-label" x="750" y="69" text-anchor="middle">message, on Confirm Delivery</text>
+
+            <defs>
+              <marker id="arrInbound" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+                <path d="M0,0 L6,3 L0,6 z" fill="currentColor" style="color:var(--muted)"/>
+              </marker>
+            </defs>
+          </svg>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -393,47 +430,88 @@
   <section class="slide">
     <p class="eyebrow">Today's process</p>
     <h2>Order Fulfillment</h2>
+    <p class="lede" style="margin-top:0;">Same happy path as before — now with six ways an instance can actually end.</p>
     <div class="diagram-wrap">
-      <svg viewBox="0 0 1000 340" width="1000" height="340">
-        <circle class="flow-event" cx="40" cy="70" r="16"/>
-        <text class="flow-text" x="40" y="112" text-anchor="middle">Order Received</text>
+      <svg viewBox="0 0 1340 430" width="1340" height="430">
+        <circle class="flow-event" cx="30" cy="70" r="16"/>
+        <text class="flow-text" x="30" y="112" text-anchor="middle">Order Received</text>
 
-        <rect class="flow-box" x="100" y="48" width="130" height="44" rx="5"/>
-        <text class="flow-text" x="165" y="75" text-anchor="middle">Validate Order</text>
+        <rect class="flow-box" x="76" y="48" width="110" height="44" rx="5"/>
+        <text class="flow-text" x="131" y="70" text-anchor="middle">Reserve Items</text>
+        <text class="flow-label" x="131" y="84" text-anchor="middle">multi-instance</text>
+        <rect x="120" y="85" width="6" height="9" fill="var(--muted)"/>
+        <rect x="129" y="85" width="6" height="9" fill="var(--muted)"/>
+        <rect x="138" y="85" width="6" height="9" fill="var(--muted)"/>
 
-        <polygon class="flow-gateway" points="290,70 316,44 342,70 316,96"/>
-        <text class="flow-text" x="316" y="30" text-anchor="middle">In Stock?</text>
+        <rect class="flow-box" x="216" y="48" width="110" height="44" rx="5"/>
+        <text class="flow-text" x="271" y="75" text-anchor="middle">Validate Order</text>
 
-        <rect class="flow-box accent connector" x="390" y="48" width="130" height="44" rx="5"/>
-        <text class="flow-text" x="455" y="70" text-anchor="middle">Charge Payment</text>
-        <text class="flow-label" x="455" y="84" text-anchor="middle">connector</text>
+        <rect class="flow-box" x="356" y="48" width="140" height="44" rx="5"/>
+        <text class="flow-text" x="426" y="70" text-anchor="middle">Determine Stock</text>
+        <text class="flow-label" x="426" y="84" text-anchor="middle">DMN decision</text>
 
-        <rect class="flow-box accent" x="570" y="48" width="120" height="44" rx="5"/>
-        <text class="flow-text" x="630" y="75" text-anchor="middle">Ship Order</text>
+        <polygon class="flow-gateway" points="534,70 560,44 586,70 560,96"/>
+        <text class="flow-text" x="560" y="30" text-anchor="middle">In Stock?</text>
 
-        <rect class="flow-box accent" x="740" y="48" width="140" height="44" rx="5"/>
-        <text class="flow-text" x="810" y="70" text-anchor="middle">Confirm Delivery</text>
-        <text class="flow-label" x="810" y="84" text-anchor="middle">user task</text>
+        <rect class="flow-box accent connector" x="636" y="48" width="120" height="44" rx="5"/>
+        <text class="flow-text" x="696" y="70" text-anchor="middle">Charge Payment</text>
+        <text class="flow-label" x="696" y="84" text-anchor="middle">connector</text>
 
-        <circle class="flow-event end" cx="950" cy="70" r="16"/>
-        <text class="flow-text" x="950" y="112" text-anchor="middle">Completed</text>
+        <rect class="flow-box accent" x="796" y="48" width="100" height="44" rx="5"/>
+        <text class="flow-text" x="846" y="75" text-anchor="middle">Ship Order</text>
 
-        <rect class="flow-box" x="390" y="230" width="150" height="44" rx="5"/>
-        <text class="flow-text" x="465" y="257" text-anchor="middle">Notify Backorder</text>
+        <rect class="flow-box accent" x="936" y="48" width="130" height="44" rx="5"/>
+        <text class="flow-text" x="1001" y="70" text-anchor="middle">Confirm Delivery</text>
+        <text class="flow-label" x="1001" y="84" text-anchor="middle">user task + form</text>
 
-        <circle class="flow-event end" cx="660" cy="252" r="16"/>
-        <text class="flow-text" x="660" y="294" text-anchor="middle">Backordered</text>
+        <circle class="flow-event end" cx="1140" cy="70" r="16"/>
+        <text class="flow-text" x="1140" y="112" text-anchor="middle">Completed</text>
 
-        <path class="flow-line" d="M56 70 L100 70"/>
-        <path class="flow-line" d="M230 70 L290 70"/>
-        <path class="flow-line" d="M342 70 L390 70"/>
-        <text class="flow-label" x="366" y="58" text-anchor="middle">yes</text>
-        <path class="flow-line" d="M520 70 L570 70"/>
-        <path class="flow-line" d="M690 70 L740 70"/>
-        <path class="flow-line" d="M880 70 L934 70"/>
-        <path class="flow-line" d="M316 96 L316 252 L390 252"/>
-        <text class="flow-label" x="330" y="180" text-anchor="middle">no</text>
-        <path class="flow-line" d="M540 252 L644 252"/>
+        <!-- backorder branch -->
+        <rect class="flow-box" x="610" y="228" width="140" height="44" rx="5"/>
+        <text class="flow-text" x="680" y="255" text-anchor="middle">Notify Backorder</text>
+        <circle class="flow-event end" cx="830" cy="250" r="16"/>
+        <text class="flow-text" x="830" y="292" text-anchor="middle">Backordered</text>
+
+        <!-- payment declined: error boundary event -->
+        <circle class="flow-event" cx="740" cy="92" r="9"/>
+        <text class="flow-label" x="740" y="118" text-anchor="middle">declined</text>
+        <path class="flow-line" d="M740 101 L740 150 L820 150 L820 340" marker-end="url(#arrProc)"/>
+        <circle class="flow-event end" cx="820" cy="356" r="16"/>
+        <text class="flow-text" x="820" y="398" text-anchor="middle">Payment Failed</text>
+
+        <!-- timeout: timer boundary event -->
+        <circle class="flow-event" cx="955" cy="92" r="9"/>
+        <text class="flow-label" x="955" y="118" text-anchor="middle">timeout</text>
+        <path class="flow-line" d="M955 101 L955 340" marker-end="url(#arrProc)"/>
+        <circle class="flow-event end" cx="955" cy="356" r="16"/>
+        <text class="flow-text" x="955" y="398" text-anchor="middle">Escalated</text>
+
+        <!-- canceled: message boundary event, webhook-backed -->
+        <circle class="flow-event" cx="1050" cy="92" r="9"/>
+        <text class="flow-label" x="1050" y="118" text-anchor="middle">canceled</text>
+        <path class="flow-line" d="M1050 101 L1050 150 L1220 150 L1220 340" marker-end="url(#arrProc)"/>
+        <circle class="flow-event end" cx="1220" cy="356" r="16"/>
+        <text class="flow-text" x="1220" y="398" text-anchor="middle">Canceled</text>
+
+        <path class="flow-line" d="M46 70 L76 70"/>
+        <path class="flow-line" d="M186 70 L216 70"/>
+        <path class="flow-line" d="M326 70 L356 70"/>
+        <path class="flow-line" d="M496 70 L534 70"/>
+        <path class="flow-line" d="M586 70 L636 70"/>
+        <text class="flow-label" x="611" y="58" text-anchor="middle">yes</text>
+        <path class="flow-line" d="M756 70 L796 70"/>
+        <path class="flow-line" d="M896 70 L936 70"/>
+        <path class="flow-line" d="M1066 70 L1124 70"/>
+        <path class="flow-line" d="M560 96 L560 250 L610 250"/>
+        <text class="flow-label" x="575" y="170" text-anchor="middle">no</text>
+        <path class="flow-line" d="M750 250 L814 250"/>
+
+        <defs>
+          <marker id="arrProc" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L6,3 L0,6 z" fill="currentColor" style="color:var(--muted)"/>
+          </marker>
+        </defs>
       </svg>
     </div>
   </section>
@@ -452,11 +530,11 @@
         </li>
         <li>
           <p class="step-title">Follow it in Operate</p>
-          <p class="step-body">Tokens move through the diagram as the worker and the connector each complete their jobs — <span class="mono">localhost:8080/operate</span></p>
+          <p class="step-body">Tokens move through the diagram — multi-instance reservation, the DMN decision, the worker, and the connector each complete their jobs — <span class="mono">localhost:8080/operate</span></p>
         </li>
         <li>
           <p class="step-title">Complete the human step</p>
-          <p class="step-body">"Confirm Delivery" is waiting, assigned to <span class="mono">demo</span> — <span class="mono">localhost:8080/tasklist</span></p>
+          <p class="step-body">"Confirm Delivery" is waiting, assigned to <span class="mono">demo</span>, with a real form to fill in — <span class="mono">localhost:8080/tasklist</span></p>
         </li>
         <li>
           <p class="step-title">Now the other branch</p>
@@ -489,21 +567,46 @@
     </div>
   </section>
 
-  <!-- 8 : WHY IT MATTERS -->
+  <!-- 8 : MORE BRANCHES -->
+  <section class="slide">
+    <p class="eyebrow">Not every incident is a bug</p>
+    <h2>Three more endings.</h2>
+    <p class="lede" style="margin-top:0;">Boundary events race the task they're attached to — first one to happen wins, and each ends the instance differently.</p>
+    <div class="content">
+      <ol class="steps">
+        <li>
+          <p class="step-title">Payment declined — error boundary event</p>
+          <p class="step-body">The connector's <span class="mono">errorExpression</span> turns an HTTP 402 into a BPMN error. Caught, not crashed — no incident, just a different ending.</p>
+          <pre>POST /orders {"order_id":"ORD-2001","quantity":10}</pre>
+        </li>
+        <li>
+          <p class="step-title">Canceled — message boundary event + inbound connector</p>
+          <p class="step-body">A real external call interrupts a running instance from outside — the same pattern a customer portal or support tool would use.</p>
+          <pre>POST /orders/ORD-2002/cancel</pre>
+        </li>
+        <li>
+          <p class="step-title">Escalated — timer boundary event</p>
+          <p class="step-body">Leave "Confirm Delivery" untouched for a minute and it fires on its own — no API call, just the passage of time.</p>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- 9 : WHY IT MATTERS -->
   <section class="slide">
     <p class="eyebrow">Why it matters</p>
     <h2>What you actually get.</h2>
     <div class="content">
       <ul class="points">
         <li><span class="tag">see</span><span class="body"><b>Every instance, live.</b> Not logs to reconstruct — an actual, current picture of what's running and where it's stuck.</span></li>
-        <li><span class="tag">change</span><span class="body"><b>Reroute without a deploy.</b> The gateway condition is process data, not a code branch.</span></li>
+        <li><span class="tag">change</span><span class="body"><b>Reroute without a deploy.</b> The gateway condition reads a DMN decision, not a code branch.</span></li>
         <li><span class="tag">mix</span><span class="body"><b>Any language, per step.</b> Today's workers are Python — they could be Java or Node right next to them.</span></li>
-        <li><span class="tag">trust</span><span class="body"><b>Nothing silently drops.</b> A failed job becomes a visible, fixable incident — never a swallowed exception.</span></li>
+        <li><span class="tag">trust</span><span class="body"><b>Nothing silently drops.</b> A failed job becomes a visible, fixable incident; a business failure becomes a modeled boundary event — never a swallowed exception.</span></li>
       </ul>
     </div>
   </section>
 
-  <!-- 9 : CLOSE -->
+  <!-- 10 : CLOSE -->
   <section class="slide">
     <p class="eyebrow">Thanks</p>
     <h1>Questions?</h1>
@@ -516,7 +619,7 @@
 <div class="dots" id="dots"></div>
 <div class="hud">
   <button class="navbtn" id="prev" aria-label="Previous slide">‹</button>
-  <span class="count" id="count">1 / 9</span>
+  <span class="count" id="count">1 / 10</span>
   <button class="navbtn" id="next" aria-label="Next slide">›</button>
 </div>
 
