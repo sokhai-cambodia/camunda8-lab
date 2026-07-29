@@ -68,9 +68,10 @@
 
     <bpmn:serviceTask id="Task_ChargePayment" name="Charge Payment" zeebe:modelerTemplate="io.camunda.connectors.HttpJson.v2">
       <bpmn:extensionElements>
-        <!-- Built-in REST connector: calls payment_service.py directly over HTTP.
-             No custom job worker needed for this step; see order_workers.py
-             for the contrast (charge-payment used to be handled there). -->
+        <!-- Built-in REST connector: calls services_node/payment_service.js
+             directly over HTTP. No custom job worker needed for this step;
+             see order_workers.py for the contrast (charge-payment used to be
+             handled there). -->
         <zeebe:taskDefinition type="io.camunda:http-json:1" retries="3" />
         <zeebe:ioMapping>
           <zeebe:input target="method" source="POST" />
@@ -79,7 +80,7 @@
         </zeebe:ioMapping>
         <zeebe:taskHeaders>
           <zeebe:header key="resultExpression" value="={ paymentId: response.body.payment_id, amountCharged: response.body.amount_charged }" />
-          <!-- payment_service.py returns HTTP 402 when quantity=10 (deliberate demo
+          <!-- payment_service.js returns HTTP 402 when quantity=10 (deliberate demo
                trigger, top of the DMN in-stock range); this maps that into a BPMN
                error, caught by the boundary error event below, instead of leaving
                it as a raw connector failure. -->

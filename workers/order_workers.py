@@ -39,7 +39,7 @@ async def main() -> None:
 
     # No "charge-payment" job worker here -- that step is now handled by the
     # built-in REST connector configured directly on the BPMN task, which
-    # calls services/payment_service.py without any custom polling code.
+    # calls services_node/payment_service.js without any custom polling code.
 
     @worker.task(task_type="handle-payment-failure", exception_handler=on_error)
     def handle_payment_failure(orderId: str) -> dict:

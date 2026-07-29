@@ -5,25 +5,29 @@ Hands-on Camunda 8 environment + a runnable example, built to get you demo-confi
 
 Stack: Docker Compose (self-managed, Camunda 8.9.13, H2 storage — no Elasticsearch needed) +
 a Python job worker (`pyzeebe`) + the built-in REST and Webhook Connectors + a DMN decision
-table + a Camunda Form + two small FastAPI services. Between the BPMN model and this README,
-the lab now touches every Camunda 8 modeling/runtime concept that doesn't require standing up
-Elasticsearch or Keycloak (Optimize, Identity, and Web Modeler are out of scope for that reason).
+table + a Camunda Form + a Python service and a Node service. Between the BPMN model and this
+README, the lab now touches every Camunda 8 modeling/runtime concept that doesn't require
+standing up Elasticsearch or Keycloak (Optimize, Identity, and Web Modeler are out of scope
+for that reason).
 
 ```
-bpmn/            order-fulfillment.bpmn — the executable process
-dmn/             stock-check.dmn — the in-stock decision table (business rule task)
-forms/           confirm-delivery.form — the Camunda Form shown in Tasklist
-docker-compose/  Camunda stack: orchestration (Zeebe+Operate+Tasklist) + connectors
-workers/         order_workers.py — job workers (reserve-item, validate-order, handle-payment-failure,
-                 ship-order, escalate-to-manager, cancel-order, notify-backorder)
-services/        order_service.py (triggers/cancels instances) + payment_service.py (plain microservice, called by the Connector)
-slides/          demo-slides.html
-requirements.txt shared venv for workers/ and services/
+bpmn/             order-fulfillment.bpmn — the executable process
+dmn/              stock-check.dmn — the in-stock decision table (business rule task)
+forms/            confirm-delivery.form — the Camunda Form shown in Tasklist
+docker-compose/   Camunda stack: orchestration (Zeebe+Operate+Tasklist) + connectors
+workers/          order_workers.py — job workers (reserve-item, validate-order, handle-payment-failure,
+                  ship-order, escalate-to-manager, cancel-order, notify-backorder)
+services_python/  order_service.py — FastAPI, triggers/cancels instances via the Zeebe client
+services_node/    payment_service.js — Express, called by the Charge Payment connector
+slides/           demo-slides.html + camunda8-demo.pptx
+requirements.txt  shared venv for workers/ and services_python/
 ```
 
-`workers/` is only for code that polls Zeebe as a job worker. `services/` is plain FastAPI
-apps that happen to be involved in the process — one triggers it, one gets called by a
-Connector — but neither of them speaks the Zeebe protocol directly.
+`workers/` is only for code that polls Zeebe as a job worker. `services_python/` and
+`services_node/` are plain HTTP services that happen to be involved in the process — one
+triggers/cancels it, one gets called by a connector — but neither speaks the Zeebe protocol
+directly, and neither has to be the same language. `services_node/` exists specifically to
+prove that: the connector that calls it doesn't know or care that it's Node instead of Python.
 
 ## Block 1 — Concepts (10 min)
 
@@ -96,18 +100,21 @@ Leave this running in its own terminal — it's polling Zeebe for `reserve-item`
 `cancel-order`, and `notify-backorder` jobs. Note `charge-payment` is deliberately *not*
 here — that job type doesn't exist anymore; the BPMN task now uses the connector directly.
 
-In a **second** terminal, start the microservice the Connector calls into:
+In a **second** terminal, start the microservice the Connector calls into — this one's
+Node, not Python, deliberately (see Block 1's polyglot point):
 ```powershell
-.venv\Scripts\Activate.ps1
-uvicorn services.payment_service:app --port 8001
+cd services_node
+npm install
+npm start
 ```
-`payment_service.py` has zero imports from `pyzeebe` — it's a normal REST endpoint that
-has no idea Camunda exists.
+`payment_service.js` has zero imports from anything Camunda/Zeebe-related — it's a normal
+Express endpoint that has no idea Camunda exists. The REST connector calls it over plain
+HTTP on port 8001, same as it would call any existing internal API in any language.
 
 In a **third** terminal, start the service that triggers instances:
 ```powershell
 .venv\Scripts\Activate.ps1
-uvicorn services.order_service:app --port 8000
+uvicorn services_python.order_service:app --port 8000
 ```
 On startup this deploys the BPMN, DMN, and form resources once and exposes `POST /orders`
 plus `POST /orders/{order_id}/cancel`. Open http://localhost:8000/docs for the interactive
@@ -155,7 +162,7 @@ Each of these ends the instance a different way than the happy path — good for
 that "the process" isn't just one line through the diagram.
 
 **Payment declined (error boundary event).** `quantity=10` is a deliberate trigger in
-`payment_service.py` that returns HTTP 402 — chosen because it's still the top of the
+`payment_service.js` that returns HTTP 402 — chosen because it's still the top of the
 DMN's in-stock range, so it reaches Charge Payment instead of being backordered first:
 ```powershell
 curl -X POST http://localhost:8000/orders -H "Content-Type: application/json" -d "{\"order_id\":\"ORD-2001\",\"quantity\":10}"

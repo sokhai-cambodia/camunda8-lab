@@ -41,7 +41,7 @@ services:
         condition: service_completed_successfully
 
   # Camunda Connectors - executes outbound connector logic (e.g. the built-in
-  # REST connector our "Charge Payment" task uses to call payment_service.py
+  # REST connector our "Charge Payment" task uses to call payment_service.js
   # on the host, via host.docker.internal).
   connectors:
     image: camunda/connectors-bundle:8.9.6 # matches CAMUNDA_VERSION's 8.9 line

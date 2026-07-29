@@ -1,0 +1,14 @@
+{
+  "name": "payment-service",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Payment microservice called by the Charge Payment REST connector -- Node/Express, kept alongside services_python/ (order_service.py) to prove Camunda's polyglot claim rather than just assert it.",
+  "type": "module",
+  "main": "payment_service.js",
+  "scripts": {
+    "start": "node payment_service.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}
