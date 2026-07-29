@@ -11,22 +11,57 @@
                   modeler:executionPlatform="Camunda Cloud"
                   modeler:executionPlatformVersion="8.9.0">
 
+  <bpmn:error id="Error_PaymentDeclined" name="PaymentDeclined" errorCode="PAYMENT_DECLINED" />
+
+  <bpmn:message id="Message_OrderCanceled" name="order-canceled">
+    <bpmn:extensionElements>
+      <zeebe:subscription correlationKey="=orderId" />
+    </bpmn:extensionElements>
+  </bpmn:message>
+
   <bpmn:process id="order-fulfillment-process" name="Order Fulfillment" isExecutable="true">
 
     <bpmn:startEvent id="StartEvent_OrderReceived" name="Order Received">
-      <bpmn:outgoing>Flow_Start_Validate</bpmn:outgoing>
+      <bpmn:outgoing>Flow_Start_Reserve</bpmn:outgoing>
     </bpmn:startEvent>
+
+    <!-- Multi-instance: reserves each line item in `items` before validation. One job
+         per array element, run sequentially so the demo log reads top-to-bottom. -->
+    <bpmn:serviceTask id="Task_ReserveItems" name="Reserve Items">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="reserve-item" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_Start_Reserve</bpmn:incoming>
+      <bpmn:outgoing>Flow_Reserve_Validate</bpmn:outgoing>
+      <bpmn:multiInstanceLoopCharacteristics isSequential="true">
+        <bpmn:extensionElements>
+          <zeebe:loopCharacteristics inputCollection="=items" inputElement="item"
+                                      outputCollection="reservations" outputElement="=reservationId" />
+        </bpmn:extensionElements>
+      </bpmn:multiInstanceLoopCharacteristics>
+    </bpmn:serviceTask>
 
     <bpmn:serviceTask id="Task_ValidateOrder" name="Validate Order">
       <bpmn:extensionElements>
         <zeebe:taskDefinition type="validate-order" />
       </bpmn:extensionElements>
-      <bpmn:incoming>Flow_Start_Validate</bpmn:incoming>
-      <bpmn:outgoing>Flow_Validate_Gateway</bpmn:outgoing>
+      <bpmn:incoming>Flow_Reserve_Validate</bpmn:incoming>
+      <bpmn:outgoing>Flow_Validate_DetermineStock</bpmn:outgoing>
     </bpmn:serviceTask>
 
+    <!-- Business rule task: the in-stock call used to be inline Python
+         ("quantity <= 10") in validate_order. It's now a DMN decision table
+         (dmn/stock-check.dmn): same logic, declarative instead of imperative. -->
+    <bpmn:businessRuleTask id="Task_DetermineStock" name="Determine Stock Status">
+      <bpmn:extensionElements>
+        <zeebe:calledDecision decisionId="stock-check" resultVariable="inStock" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_Validate_DetermineStock</bpmn:incoming>
+      <bpmn:outgoing>Flow_DetermineStock_Gateway</bpmn:outgoing>
+    </bpmn:businessRuleTask>
+
     <bpmn:exclusiveGateway id="Gateway_InStock" name="In Stock?">
-      <bpmn:incoming>Flow_Validate_Gateway</bpmn:incoming>
+      <bpmn:incoming>Flow_DetermineStock_Gateway</bpmn:incoming>
       <bpmn:outgoing>Flow_Gateway_Charge</bpmn:outgoing>
       <bpmn:outgoing>Flow_Gateway_Backorder</bpmn:outgoing>
     </bpmn:exclusiveGateway>
@@ -44,11 +79,33 @@
         </zeebe:ioMapping>
         <zeebe:taskHeaders>
           <zeebe:header key="resultExpression" value="={ paymentId: response.body.payment_id, amountCharged: response.body.amount_charged }" />
+          <!-- payment_service.py returns HTTP 402 when quantity=10 (deliberate demo
+               trigger, top of the DMN in-stock range); this maps that into a BPMN
+               error, caught by the boundary error event below, instead of leaving
+               it as a raw connector failure. -->
+          <zeebe:header key="errorExpression" value="=if error.code = &#34;402&#34; then bpmnError(&#34;PAYMENT_DECLINED&#34;, &#34;Payment declined: insufficient funds&#34;) else null" />
         </zeebe:taskHeaders>
       </bpmn:extensionElements>
       <bpmn:incoming>Flow_Gateway_Charge</bpmn:incoming>
       <bpmn:outgoing>Flow_Charge_Ship</bpmn:outgoing>
     </bpmn:serviceTask>
+
+    <bpmn:boundaryEvent id="Boundary_PaymentDeclined" name="Payment Declined" attachedToRef="Task_ChargePayment">
+      <bpmn:outgoing>Flow_PaymentDeclined_Handle</bpmn:outgoing>
+      <bpmn:errorEventDefinition id="ErrorEventDefinition_PaymentDeclined" errorRef="Error_PaymentDeclined" />
+    </bpmn:boundaryEvent>
+
+    <bpmn:serviceTask id="Task_HandlePaymentFailure" name="Handle Payment Failure">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="handle-payment-failure" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_PaymentDeclined_Handle</bpmn:incoming>
+      <bpmn:outgoing>Flow_Handle_PaymentFailedEnd</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:endEvent id="EndEvent_PaymentFailed" name="Order Payment Failed">
+      <bpmn:incoming>Flow_Handle_PaymentFailedEnd</bpmn:incoming>
+    </bpmn:endEvent>
 
     <bpmn:serviceTask id="Task_ShipOrder" name="Ship Order">
       <bpmn:extensionElements>
@@ -62,10 +119,62 @@
       <bpmn:extensionElements>
         <zeebe:userTask />
         <zeebe:assignmentDefinition assignee="demo" />
+        <zeebe:formDefinition formId="confirm-delivery" bindingType="deployment" />
       </bpmn:extensionElements>
       <bpmn:incoming>Flow_Ship_Confirm</bpmn:incoming>
       <bpmn:outgoing>Flow_Confirm_End</bpmn:outgoing>
     </bpmn:userTask>
+
+    <!-- Interrupting timer boundary event: if nobody completes the Tasklist form
+         within a minute, escalate instead of leaving the instance stuck. -->
+    <bpmn:boundaryEvent id="Boundary_ConfirmTimeout" name="Confirmation Timeout" attachedToRef="Task_ConfirmDelivery">
+      <bpmn:outgoing>Flow_Timeout_Escalate</bpmn:outgoing>
+      <bpmn:timerEventDefinition id="TimerEventDefinition_ConfirmTimeout">
+        <bpmn:timeDuration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="bpmn:tFormalExpression">PT1M</bpmn:timeDuration>
+      </bpmn:timerEventDefinition>
+    </bpmn:boundaryEvent>
+
+    <bpmn:serviceTask id="Task_EscalateToManager" name="Escalate to Manager">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="escalate-to-manager" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_Timeout_Escalate</bpmn:incoming>
+      <bpmn:outgoing>Flow_Escalate_End</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:endEvent id="EndEvent_Escalated" name="Order Escalated">
+      <bpmn:incoming>Flow_Escalate_End</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <!-- Interrupting message boundary event backed by the inbound Webhook connector:
+         POSTing to the connectors container's /inbound/order-canceled endpoint
+         correlates here by orderId. See services/order_service.py's /cancel route. -->
+    <bpmn:boundaryEvent id="Boundary_ConfirmCanceled" name="Order Canceled" attachedToRef="Task_ConfirmDelivery">
+      <bpmn:extensionElements>
+        <zeebe:properties>
+          <zeebe:property name="inbound.type" value="io.camunda:webhook:1" />
+          <zeebe:property name="inbound.method" value="post" />
+          <zeebe:property name="inbound.context" value="order-canceled" />
+          <zeebe:property name="inbound.shouldValidateHmac" value="disabled" />
+          <zeebe:property name="inbound.variables" value="={ orderId: request.body.orderId }" />
+          <zeebe:property name="correlationKeyExpression" value="=request.body.orderId" />
+        </zeebe:properties>
+      </bpmn:extensionElements>
+      <bpmn:outgoing>Flow_Canceled_Cancel</bpmn:outgoing>
+      <bpmn:messageEventDefinition id="MessageEventDefinition_OrderCanceled" messageRef="Message_OrderCanceled" />
+    </bpmn:boundaryEvent>
+
+    <bpmn:serviceTask id="Task_CancelOrder" name="Cancel Order">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="cancel-order" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_Canceled_Cancel</bpmn:incoming>
+      <bpmn:outgoing>Flow_Cancel_End</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:endEvent id="EndEvent_Canceled" name="Order Canceled">
+      <bpmn:incoming>Flow_Cancel_End</bpmn:incoming>
+    </bpmn:endEvent>
 
     <bpmn:endEvent id="EndEvent_OrderCompleted" name="Order Completed">
       <bpmn:incoming>Flow_Confirm_End</bpmn:incoming>
@@ -83,8 +192,10 @@
       <bpmn:incoming>Flow_Backorder_End</bpmn:incoming>
     </bpmn:endEvent>
 
-    <bpmn:sequenceFlow id="Flow_Start_Validate" sourceRef="StartEvent_OrderReceived" targetRef="Task_ValidateOrder" />
-    <bpmn:sequenceFlow id="Flow_Validate_Gateway" sourceRef="Task_ValidateOrder" targetRef="Gateway_InStock" />
+    <bpmn:sequenceFlow id="Flow_Start_Reserve" sourceRef="StartEvent_OrderReceived" targetRef="Task_ReserveItems" />
+    <bpmn:sequenceFlow id="Flow_Reserve_Validate" sourceRef="Task_ReserveItems" targetRef="Task_ValidateOrder" />
+    <bpmn:sequenceFlow id="Flow_Validate_DetermineStock" sourceRef="Task_ValidateOrder" targetRef="Task_DetermineStock" />
+    <bpmn:sequenceFlow id="Flow_DetermineStock_Gateway" sourceRef="Task_DetermineStock" targetRef="Gateway_InStock" />
     <bpmn:sequenceFlow id="Flow_Gateway_Charge" name="Yes" sourceRef="Gateway_InStock" targetRef="Task_ChargePayment">
       <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">=inStock = true</bpmn:conditionExpression>
     </bpmn:sequenceFlow>
@@ -92,8 +203,14 @@
       <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">=inStock = false</bpmn:conditionExpression>
     </bpmn:sequenceFlow>
     <bpmn:sequenceFlow id="Flow_Charge_Ship" sourceRef="Task_ChargePayment" targetRef="Task_ShipOrder" />
+    <bpmn:sequenceFlow id="Flow_PaymentDeclined_Handle" sourceRef="Boundary_PaymentDeclined" targetRef="Task_HandlePaymentFailure" />
+    <bpmn:sequenceFlow id="Flow_Handle_PaymentFailedEnd" sourceRef="Task_HandlePaymentFailure" targetRef="EndEvent_PaymentFailed" />
     <bpmn:sequenceFlow id="Flow_Ship_Confirm" sourceRef="Task_ShipOrder" targetRef="Task_ConfirmDelivery" />
     <bpmn:sequenceFlow id="Flow_Confirm_End" sourceRef="Task_ConfirmDelivery" targetRef="EndEvent_OrderCompleted" />
+    <bpmn:sequenceFlow id="Flow_Timeout_Escalate" sourceRef="Boundary_ConfirmTimeout" targetRef="Task_EscalateToManager" />
+    <bpmn:sequenceFlow id="Flow_Escalate_End" sourceRef="Task_EscalateToManager" targetRef="EndEvent_Escalated" />
+    <bpmn:sequenceFlow id="Flow_Canceled_Cancel" sourceRef="Boundary_ConfirmCanceled" targetRef="Task_CancelOrder" />
+    <bpmn:sequenceFlow id="Flow_Cancel_End" sourceRef="Task_CancelOrder" targetRef="EndEvent_Canceled" />
     <bpmn:sequenceFlow id="Flow_Backorder_End" sourceRef="Task_NotifyBackorder" targetRef="EndEvent_Backordered" />
 
   </bpmn:process>
@@ -108,92 +225,196 @@
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
 
-      <bpmndi:BPMNShape id="Task_ValidateOrder_di" bpmnElement="Task_ValidateOrder">
+      <bpmndi:BPMNShape id="Task_ReserveItems_di" bpmnElement="Task_ReserveItems">
         <dc:Bounds x="240" y="100" width="100" height="80" />
       </bpmndi:BPMNShape>
 
+      <bpmndi:BPMNShape id="Task_ValidateOrder_di" bpmnElement="Task_ValidateOrder">
+        <dc:Bounds x="400" y="100" width="100" height="80" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_DetermineStock_di" bpmnElement="Task_DetermineStock">
+        <dc:Bounds x="560" y="100" width="100" height="80" />
+      </bpmndi:BPMNShape>
+
       <bpmndi:BPMNShape id="Gateway_InStock_di" bpmnElement="Gateway_InStock" isMarkerVisible="true">
-        <dc:Bounds x="400" y="115" width="50" height="50" />
+        <dc:Bounds x="720" y="115" width="50" height="50" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="393" y="85" width="64" height="14" />
+          <dc:Bounds x="713" y="85" width="64" height="14" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
 
       <bpmndi:BPMNShape id="Task_ChargePayment_di" bpmnElement="Task_ChargePayment">
-        <dc:Bounds x="500" y="100" width="100" height="80" />
+        <dc:Bounds x="820" y="100" width="100" height="80" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Boundary_PaymentDeclined_di" bpmnElement="Boundary_PaymentDeclined">
+        <dc:Bounds x="852" y="162" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="835" y="202" width="70" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_HandlePaymentFailure_di" bpmnElement="Task_HandlePaymentFailure">
+        <dc:Bounds x="820" y="380" width="100" height="80" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="EndEvent_PaymentFailed_di" bpmnElement="EndEvent_PaymentFailed">
+        <dc:Bounds x="960" y="402" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="936" y="445" width="84" height="27" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
 
       <bpmndi:BPMNShape id="Task_ShipOrder_di" bpmnElement="Task_ShipOrder">
-        <dc:Bounds x="650" y="100" width="100" height="80" />
+        <dc:Bounds x="970" y="100" width="100" height="80" />
       </bpmndi:BPMNShape>
 
       <bpmndi:BPMNShape id="Task_ConfirmDelivery_di" bpmnElement="Task_ConfirmDelivery">
-        <dc:Bounds x="800" y="100" width="100" height="80" />
+        <dc:Bounds x="1120" y="100" width="100" height="80" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Boundary_ConfirmTimeout_di" bpmnElement="Boundary_ConfirmTimeout">
+        <dc:Bounds x="1140" y="162" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1108" y="202" width="100" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_EscalateToManager_di" bpmnElement="Task_EscalateToManager">
+        <dc:Bounds x="1100" y="380" width="100" height="80" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="EndEvent_Escalated_di" bpmnElement="EndEvent_Escalated">
+        <dc:Bounds x="1240" y="402" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1218" y="445" width="80" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Boundary_ConfirmCanceled_di" bpmnElement="Boundary_ConfirmCanceled">
+        <dc:Bounds x="1184" y="162" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1168" y="202" width="70" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_CancelOrder_di" bpmnElement="Task_CancelOrder">
+        <dc:Bounds x="1100" y="560" width="100" height="80" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="EndEvent_Canceled_di" bpmnElement="EndEvent_Canceled">
+        <dc:Bounds x="1240" y="582" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1218" y="625" width="80" height="27" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
 
       <bpmndi:BPMNShape id="EndEvent_OrderCompleted_di" bpmnElement="EndEvent_OrderCompleted">
-        <dc:Bounds x="960" y="122" width="36" height="36" />
+        <dc:Bounds x="1280" y="122" width="36" height="36" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="937" y="165" width="82" height="14" />
+          <dc:Bounds x="1257" y="165" width="82" height="14" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
 
       <bpmndi:BPMNShape id="Task_NotifyBackorder_di" bpmnElement="Task_NotifyBackorder">
-        <dc:Bounds x="500" y="280" width="100" height="80" />
+        <dc:Bounds x="720" y="280" width="100" height="80" />
       </bpmndi:BPMNShape>
 
       <bpmndi:BPMNShape id="EndEvent_Backordered_di" bpmnElement="EndEvent_Backordered">
-        <dc:Bounds x="650" y="302" width="36" height="36" />
+        <dc:Bounds x="870" y="302" width="36" height="36" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="628" y="345" width="80" height="14" />
+          <dc:Bounds x="848" y="345" width="80" height="14" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
 
-      <bpmndi:BPMNEdge id="Flow_Start_Validate_di" bpmnElement="Flow_Start_Validate">
+      <bpmndi:BPMNEdge id="Flow_Start_Reserve_di" bpmnElement="Flow_Start_Reserve">
         <di:waypoint x="188" y="140" />
         <di:waypoint x="240" y="140" />
       </bpmndi:BPMNEdge>
 
-      <bpmndi:BPMNEdge id="Flow_Validate_Gateway_di" bpmnElement="Flow_Validate_Gateway">
+      <bpmndi:BPMNEdge id="Flow_Reserve_Validate_di" bpmnElement="Flow_Reserve_Validate">
         <di:waypoint x="340" y="140" />
         <di:waypoint x="400" y="140" />
       </bpmndi:BPMNEdge>
 
-      <bpmndi:BPMNEdge id="Flow_Gateway_Charge_di" bpmnElement="Flow_Gateway_Charge">
-        <di:waypoint x="450" y="140" />
+      <bpmndi:BPMNEdge id="Flow_Validate_DetermineStock_di" bpmnElement="Flow_Validate_DetermineStock">
         <di:waypoint x="500" y="140" />
+        <di:waypoint x="560" y="140" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Flow_DetermineStock_Gateway_di" bpmnElement="Flow_DetermineStock_Gateway">
+        <di:waypoint x="660" y="140" />
+        <di:waypoint x="720" y="140" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Flow_Gateway_Charge_di" bpmnElement="Flow_Gateway_Charge">
+        <di:waypoint x="770" y="140" />
+        <di:waypoint x="820" y="140" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="467" y="122" width="18" height="14" />
+          <dc:Bounds x="787" y="122" width="18" height="14" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
 
       <bpmndi:BPMNEdge id="Flow_Charge_Ship_di" bpmnElement="Flow_Charge_Ship">
-        <di:waypoint x="600" y="140" />
-        <di:waypoint x="650" y="140" />
+        <di:waypoint x="920" y="140" />
+        <di:waypoint x="970" y="140" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Flow_PaymentDeclined_Handle_di" bpmnElement="Flow_PaymentDeclined_Handle">
+        <di:waypoint x="870" y="198" />
+        <di:waypoint x="870" y="380" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Flow_Handle_PaymentFailedEnd_di" bpmnElement="Flow_Handle_PaymentFailedEnd">
+        <di:waypoint x="920" y="420" />
+        <di:waypoint x="960" y="420" />
       </bpmndi:BPMNEdge>
 
       <bpmndi:BPMNEdge id="Flow_Ship_Confirm_di" bpmnElement="Flow_Ship_Confirm">
-        <di:waypoint x="750" y="140" />
-        <di:waypoint x="800" y="140" />
+        <di:waypoint x="1070" y="140" />
+        <di:waypoint x="1120" y="140" />
       </bpmndi:BPMNEdge>
 
       <bpmndi:BPMNEdge id="Flow_Confirm_End_di" bpmnElement="Flow_Confirm_End">
-        <di:waypoint x="900" y="140" />
-        <di:waypoint x="960" y="140" />
+        <di:waypoint x="1220" y="140" />
+        <di:waypoint x="1280" y="140" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Flow_Timeout_Escalate_di" bpmnElement="Flow_Timeout_Escalate">
+        <di:waypoint x="1158" y="198" />
+        <di:waypoint x="1158" y="380" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Flow_Escalate_End_di" bpmnElement="Flow_Escalate_End">
+        <di:waypoint x="1200" y="420" />
+        <di:waypoint x="1240" y="420" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Flow_Canceled_Cancel_di" bpmnElement="Flow_Canceled_Cancel">
+        <di:waypoint x="1202" y="198" />
+        <di:waypoint x="1202" y="540" />
+        <di:waypoint x="1150" y="540" />
+        <di:waypoint x="1150" y="560" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Flow_Cancel_End_di" bpmnElement="Flow_Cancel_End">
+        <di:waypoint x="1200" y="600" />
+        <di:waypoint x="1240" y="600" />
       </bpmndi:BPMNEdge>
 
       <bpmndi:BPMNEdge id="Flow_Gateway_Backorder_di" bpmnElement="Flow_Gateway_Backorder">
-        <di:waypoint x="425" y="165" />
-        <di:waypoint x="425" y="320" />
-        <di:waypoint x="500" y="320" />
+        <di:waypoint x="745" y="165" />
+        <di:waypoint x="745" y="320" />
+        <di:waypoint x="720" y="320" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="433" y="240" width="16" height="14" />
+          <dc:Bounds x="753" y="240" width="16" height="14" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
 
       <bpmndi:BPMNEdge id="Flow_Backorder_End_di" bpmnElement="Flow_Backorder_End">
-        <di:waypoint x="600" y="320" />
-        <di:waypoint x="650" y="320" />
+        <di:waypoint x="820" y="320" />
+        <di:waypoint x="870" y="320" />
       </bpmndi:BPMNEdge>
 
     </bpmndi:BPMNPlane>

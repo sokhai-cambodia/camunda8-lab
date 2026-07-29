@@ -1,0 +1,34 @@
+{
+  "components": [
+    {
+      "label": "Delivery notes",
+      "type": "textfield",
+      "layout": {
+        "row": "Row_DeliveryNotes",
+        "columns": null
+      },
+      "id": "Field_DeliveryNotes",
+      "key": "deliveryNotes",
+      "description": "Anything the customer mentioned on delivery (optional)"
+    },
+    {
+      "label": "Delivery was satisfactory",
+      "type": "checkbox",
+      "layout": {
+        "row": "Row_DeliverySatisfactory",
+        "columns": null
+      },
+      "id": "Field_DeliverySatisfactory",
+      "key": "deliverySatisfactory"
+    }
+  ],
+  "type": "default",
+  "id": "confirm-delivery",
+  "executionPlatform": "Camunda Cloud",
+  "executionPlatformVersion": "8.9.0",
+  "exporter": {
+    "name": "camunda8-lab",
+    "version": "1.0"
+  },
+  "schemaVersion": 12
+}

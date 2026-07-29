@@ -4,13 +4,19 @@ Hands-on Camunda 8 environment + a runnable example, built to get you demo-confi
 1-2 hours. Follow the blocks in order — each one is a checkpoint, not just reading material.
 
 Stack: Docker Compose (self-managed, Camunda 8.9.13, H2 storage — no Elasticsearch needed) +
-a Python job worker (`pyzeebe`) + the built-in REST Connector + two small FastAPI services.
+a Python job worker (`pyzeebe`) + the built-in REST and Webhook Connectors + a DMN decision
+table + a Camunda Form + two small FastAPI services. Between the BPMN model and this README,
+the lab now touches every Camunda 8 modeling/runtime concept that doesn't require standing up
+Elasticsearch or Keycloak (Optimize, Identity, and Web Modeler are out of scope for that reason).
 
 ```
 bpmn/            order-fulfillment.bpmn — the executable process
+dmn/             stock-check.dmn — the in-stock decision table (business rule task)
+forms/           confirm-delivery.form — the Camunda Form shown in Tasklist
 docker-compose/  Camunda stack: orchestration (Zeebe+Operate+Tasklist) + connectors
-workers/         order_workers.py — the one real Zeebe job worker (ship-order, notify-backorder, validate-order)
-services/        order_service.py (triggers instances) + payment_service.py (plain microservice, called by the Connector)
+workers/         order_workers.py — job workers (reserve-item, validate-order, handle-payment-failure,
+                 ship-order, escalate-to-manager, cancel-order, notify-backorder)
+services/        order_service.py (triggers/cancels instances) + payment_service.py (plain microservice, called by the Connector)
 slides/          demo-slides.html
 requirements.txt shared venv for workers/ and services/
 ```
@@ -24,7 +30,11 @@ Connector — but neither of them speaks the Zeebe protocol directly.
 - **BPMN** — the diagram *is* the executable process. No separate "translate design to code" step.
 - **Zeebe** — the workflow engine at the core. Horizontally scalable, event-sourced. Talks gRPC on `:26500`.
 - **Job workers** — external processes that poll Zeebe for work of a given `task type`, do the work, report back. This is how Camunda 8 stays polyglot — workers can be Python, Java, Node, anything with a gRPC/REST client.
-- **Connectors** — prebuilt workers Camunda ships for you (REST, Slack, email, etc.), configured on the BPMN task itself instead of hand-written. Our "Charge Payment" step uses the built-in REST connector.
+- **Connectors** — prebuilt workers Camunda ships for you, configured on the BPMN task instead of hand-written. We use two kinds: an **outbound** REST connector ("Charge Payment" calls out to a service) and an **inbound** Webhook connector ("Order Canceled" is triggered by an incoming HTTP call).
+- **DMN** — decision tables modeled separately from the process flow. A **business rule task** calls one the same way a service task calls a job worker; ours picks in-stock vs. out-of-stock.
+- **Forms** — a JSON schema attached to a user task that Tasklist renders automatically, instead of a bare "complete this task" button.
+- **Boundary events** — attached to the edge of a task, they race the task itself. A **timer** boundary times out a task; an **error** boundary catches a business failure thrown by a connector/worker; a **message** boundary waits for an external event. All three interrupt "Confirm Delivery" or "Charge Payment" in this model.
+- **Multi-instance** — runs one activity per element of a collection (our "Reserve Items" step, once per line item) instead of once per process instance.
 - **Operate** — web UI to monitor running/completed process instances and fix **incidents** (failed jobs).
 - **Tasklist** — web UI for humans to complete **user tasks** (the manual steps in a process).
 
@@ -55,13 +65,22 @@ Once ready, open:
 Open `bpmn/order-fulfillment.bpmn` in [Camunda Desktop Modeler](https://camunda.com/download/modeler/)
 or drag it into https://demo.bpmn.io to see it visually (good for a slide screenshot).
 
-Flow: **Order Received** → *Validate Order* (job worker) → **In Stock?** gateway →
-- Yes → *Charge Payment* (REST connector) → *Ship Order* (job worker) → *Confirm Delivery* (user task, assigned to `demo`) → **Order Completed**
+Flow: **Order Received** → *Reserve Items* (multi-instance job worker, one per line item) →
+*Validate Order* (job worker) → *Determine Stock Status* (business rule task → DMN) →
+**In Stock?** gateway →
+- Yes → *Charge Payment* (REST connector)
+  - normal → *Ship Order* (job worker) → *Confirm Delivery* (user task + Camunda Form, assigned to `demo`)
+    - completed → **Order Completed**
+    - timer boundary (1 min) → *Escalate to Manager* → **Order Escalated**
+    - message boundary (webhook) → *Cancel Order* → **Order Canceled**
+  - error boundary (payment declined) → *Handle Payment Failure* → **Order Payment Failed**
 - No → *Notify Backorder* (job worker) → **Order Backordered**
 
 Talking points:
-- The gateway condition (`inStock = true`) reads a process variable that `validate_order` set — the live link between BPMN and code.
-- Click "Charge Payment" and open its properties panel — it has no custom code behind it, just a configured URL/method/body. Contrast this with "Ship Order," which is a real job worker in `workers/order_workers.py`.
+- The gateway condition (`inStock = true`) reads a process variable that the *Determine Stock Status* business rule task set by calling `dmn/stock-check.dmn` — open that decision table in Modeler to show the same logic as a table instead of code.
+- Click "Charge Payment" and open its properties panel — it has no custom code behind it, just a configured URL/method/body, plus an `errorExpression` header that turns an HTTP 402 into a BPMN error for the boundary event attached to it. Contrast this with "Ship Order," which is a real job worker in `workers/order_workers.py`.
+- Click "Confirm Delivery" — its Form tab shows `forms/confirm-delivery.form`, and it has three ways out: complete it, let the timer boundary fire, or hit it with the cancel webhook. Same task, three different exits.
+- "Reserve Items" has the multi-instance marker (three vertical bars) in its bottom-left corner — click it and open the "Multi-instance" tab to see `items` as the input collection.
 
 ## Block 4 — Run the workers and services (25 min)
 
@@ -72,8 +91,9 @@ pip install -r requirements.txt
 python workers/order_workers.py
 ```
 
-Leave this running in its own terminal — it's polling Zeebe for `validate-order`,
-`ship-order`, and `notify-backorder` jobs. Note `charge-payment` is deliberately *not*
+Leave this running in its own terminal — it's polling Zeebe for `reserve-item`,
+`validate-order`, `handle-payment-failure`, `ship-order`, `escalate-to-manager`,
+`cancel-order`, and `notify-backorder` jobs. Note `charge-payment` is deliberately *not*
 here — that job type doesn't exist anymore; the BPMN task now uses the connector directly.
 
 In a **second** terminal, start the microservice the Connector calls into:
@@ -89,9 +109,10 @@ In a **third** terminal, start the service that triggers instances:
 .venv\Scripts\Activate.ps1
 uvicorn services.order_service:app --port 8000
 ```
-On startup this deploys the BPMN file once and exposes `POST /orders`. Open
-http://localhost:8000/docs for the interactive Swagger UI — good for the demo, since you
-can trigger orders by clicking "Try it out" instead of typing curl live.
+On startup this deploys the BPMN, DMN, and form resources once and exposes `POST /orders`
+plus `POST /orders/{order_id}/cancel`. Open http://localhost:8000/docs for the interactive
+Swagger UI — good for the demo, since you can trigger (and cancel) orders by clicking
+"Try it out" instead of typing curl live.
 
 ## Block 5 — Run it end to end (15 min)
 
@@ -99,9 +120,9 @@ Start the happy path (`quantity=5`, ≤10 → in stock):
 ```powershell
 curl -X POST http://localhost:8000/orders -H "Content-Type: application/json" -d "{\"order_id\":\"ORD-1001\",\"quantity\":5}"
 ```
-1. Watch the worker terminal (job side) and the payment service terminal (connector side) both log activity.
+1. Watch the worker terminal (job side) and the payment service terminal (connector side) both log activity — including the `reserve-item` log line running once per entry in `items`.
 2. Open Operate → click the running instance → watch tokens move through the diagram live.
-3. Open Tasklist → find the "Confirm Delivery" task assigned to `demo` → complete it.
+3. Open Tasklist → find the "Confirm Delivery" task assigned to `demo` → you'll see the real form (delivery notes + a satisfaction checkbox) instead of a blank task → fill it in and complete it.
 4. Back in Operate, the instance shows as completed.
 
 Try the backorder path too:
@@ -128,16 +149,50 @@ curl -X POST http://localhost:8000/orders -H "Content-Type: application/json" -d
 Talking point: no code deploy, no restart, no lost work — you fixed bad data and resumed a
 running process from where it failed.
 
-## Block 7 — Slides
+## Block 7 — Three more branches: decline, cancel, escalate (15 min)
+
+Each of these ends the instance a different way than the happy path — good for showing
+that "the process" isn't just one line through the diagram.
+
+**Payment declined (error boundary event).** `quantity=10` is a deliberate trigger in
+`payment_service.py` that returns HTTP 402 — chosen because it's still the top of the
+DMN's in-stock range, so it reaches Charge Payment instead of being backordered first:
+```powershell
+curl -X POST http://localhost:8000/orders -H "Content-Type: application/json" -d "{\"order_id\":\"ORD-2001\",\"quantity\":10}"
+```
+The REST connector's `errorExpression` turns that into a BPMN error; the boundary error
+event on "Charge Payment" catches it and routes to `handle-payment-failure` instead of
+"Ship Order". In Operate, this instance ends at **Order Payment Failed** — no incident,
+because the error was *handled*, not unhandled like Block 6's.
+
+**Cancel via webhook (message boundary event + inbound connector).** Start an order, then
+before completing "Confirm Delivery" in Tasklist, cancel it:
+```powershell
+curl -X POST http://localhost:8000/orders -H "Content-Type: application/json" -d "{\"order_id\":\"ORD-2002\",\"quantity\":5}"
+curl -X POST http://localhost:8000/orders/ORD-2002/cancel
+```
+`/cancel` POSTs to the connectors container's inbound Webhook endpoint
+(`http://localhost:8086/inbound/order-canceled`), which correlates by `orderId` to the
+message boundary event on "Confirm Delivery" and routes to `cancel-order`. Ends at
+**Order Canceled**. Talking point: this is the same mechanism a real system (e.g. a
+customer portal calling a webhook) would use to interrupt a running process from outside.
+
+**Timeout (timer boundary event).** Start another order and just leave "Confirm Delivery"
+sitting in Tasklist without completing it for about a minute — the timer boundary fires on
+its own, runs `escalate-to-manager`, and the instance ends at **Order Escalated**. No curl
+needed for this one; it's the passage of time itself that's the trigger.
+
+## Block 8 — Slides
 
 See `slides/` — an HTML deck you can open in a browser (`slides/demo-slides.html`) and
 present directly, or use as the outline for your own deck.
 
-## Block 8 — Dry run (10 min)
+## Block 9 — Dry run (10 min)
 
 Run the full sequence solo, end to end, before the real demo: stack up → deploy → happy
-path → backorder path → incident → retry. Time yourself. If Docker startup is slow, start
-`docker compose up -d` a few minutes before your actual demo slot.
+path → backorder path → incident → retry → decline → cancel → escalate. Time yourself. If
+Docker startup is slow, start `docker compose up -d` a few minutes before your actual demo
+slot.
 
 ## Shutting down
 
