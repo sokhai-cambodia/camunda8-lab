@@ -29,6 +29,75 @@ triggers/cancels it, one gets called by a connector — but neither speaks the Z
 directly, and neither has to be the same language. `services_node/` exists specifically to
 prove that: the connector that calls it doesn't know or care that it's Node instead of Python.
 
+## Architecture & Lifecycle
+
+Read this before Block 1 if you want the big picture first, or after Block 6 if you'd
+rather run the demo before reading how it works underneath.
+
+### Architecture — what's running, and who talks to whom
+
+Five independent processes, three languages, two protocols. None of them know about each
+other's internals — only the contracts (job types, HTTP routes, message names).
+
+| Process | Language | Port | Talks to Zeebe via | Role |
+|---|---|---|---|---|
+| `orchestration` container | Java (Zeebe) | `26500` gRPC, `8080` REST/UI | — | The engine itself, plus Operate and Tasklist |
+| `connectors` container | Java | `8086` | gRPC (built-in worker) | Executes outbound connector calls; hosts inbound webhooks |
+| `services_python/order_service.py` | Python (FastAPI) | `8000` | gRPC (`pyzeebe` client) | Deploys resources; starts/cancels instances |
+| `workers/order_workers.py` | Python (`pyzeebe`) | — (long-polls, no server) | gRPC (job worker) | Executes every task type *except* the connector-backed ones |
+| `services_node/payment_service.js` | Node (Express) | `8001` | never — plain HTTP only | Called by the outbound connector; doesn't know Camunda exists |
+
+Three ways a BPMN task actually gets executed — this is the thing worth being able to draw
+on a whiteboard:
+
+```
+Job worker:          BPMN task --(gRPC: poll, activate, complete)--> order_workers.py
+
+Outbound connector:  BPMN task --(gRPC job, picked up by connectors container)-->
+                      connectors container --(plain HTTP)--> payment_service.js
+
+Inbound connector:   external caller --(HTTP POST)--> connectors container
+                      --(publishes a correlated message)--> BPMN boundary/catch event
+```
+
+### Lifecycle — one order, start to finish
+
+**Startup, once, in any order:**
+1. `docker compose up -d` — Zeebe + Operate + Tasklist + Connectors come up.
+2. `order_workers.py` opens a gRPC connection and starts **long-polling**: "give me jobs of
+   type X." Nothing is registered anywhere in advance — it just keeps asking.
+3. `payment_service.js` starts as a plain HTTP server. It has no idea Camunda exists.
+4. `order_service.py` starts and **deploys** the BPMN + DMN + form as one versioned bundle
+   into Zeebe. This defines the process (like registering a class) — no instances exist yet.
+
+**Per order, every time `POST /orders` runs:**
+1. `order_service.py` asks Zeebe to create an instance. The token starts, moves to
+   **Reserve Items**.
+2. Reserve Items is multi-instance — Zeebe creates one **job** per line item (type
+   `reserve-item`) and parks them in an internal queue.
+3. `order_workers.py`'s poll loop notices the waiting jobs, activates, runs the Python
+   function, completes each one. Same poll → run → complete cycle happens later for
+   `validate-order`.
+4. Token reaches **Determine Stock Status** — a business rule task, so Zeebe evaluates the
+   DMN table **internally**. No worker involved at all.
+5. Gateway reads `inStock`, routes.
+6. **Charge Payment** creates a job of type `io.camunda:http-json:1`. `order_workers.py`
+   never sees this one — the **connectors container** picks it up instead, makes the actual
+   HTTP call to `payment_service.js:8001`, and completes the job with the response mapped
+   into variables. If the response is HTTP 402, the connector throws a BPMN error instead of
+   completing normally, and Zeebe routes to the matching boundary error event.
+7. **Confirm Delivery** is a *user task*, not a service task — nobody polls for it. Zeebe
+   just creates it and waits. At the same moment it starts a **timer** (1 min) and opens a
+   **message subscription** (`order-canceled`, correlated by `orderId`). All three —
+   a human completing it, the timer, the message — race each other; whichever happens first
+   wins and interrupts the other two.
+8. A cancel arrives as: `curl .../cancel` → `order_service.py` → HTTP POST to the connectors
+   container's webhook → connectors container publishes a correlated message into Zeebe →
+   Zeebe matches it to the waiting subscription → interrupts the user task.
+
+That race in step 7 is the single most useful thing to be able to explain unprompted — it's
+the moment that makes boundary events click for people who've only seen linear flowcharts.
+
 ## Block 1 — Concepts (10 min)
 
 - **BPMN** — the diagram *is* the executable process. No separate "translate design to code" step.
