@@ -260,8 +260,11 @@ needed for this one; it's the passage of time itself that's the trigger.
 
 ## Block 8 — Slides
 
-See `slides/` — an HTML deck you can open in a browser (`slides/demo-slides.html`) and
-present directly, or use as the outline for your own deck.
+See `slides/` — two versions of the same deck, kept in sync:
+- `demo-slides.html` — open in a browser and present directly (arrow keys / click to navigate).
+- `camunda8-demo.pptx` — same content, native PowerPoint, if that's what your team presents
+  from. Regenerate it after editing the HTML deck with `python slides/build_pptx.py`
+  (needs `pip install python-pptx` once).
 
 ## Block 9 — Dry run (10 min)
 
