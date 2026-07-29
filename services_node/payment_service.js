@@ -7,7 +7,7 @@ function log(level, message) {
 
 // Stand-in for a real payment microservice. Camunda knows nothing about this
 // service directly -- the Charge Payment REST connector in
-// bpmn/order-fulfillment.bpmn calls it over plain HTTP, same as it would call
+// process/bpmn/order-fulfillment.bpmn calls it over plain HTTP, same as it would call
 // any existing internal API. Node/Express, sitting next to services_python/
 // (order_service.py) -- proves the "any language, per step" claim rather
 // than just asserting it.
@@ -19,7 +19,7 @@ app.post("/charge", (req, res) => {
 
   if (quantity === 10) {
     // Deliberate demo trigger: quantity=10 is the top of the DMN's in-stock
-    // range (dmn/stock-check.dmn), so it still reaches Charge Payment before
+    // range (process/dmn/stock-check.dmn), so it still reaches Charge Payment before
     // declining here -- caught by the BPMN error boundary event via
     // errorExpression. Shows stock-check and payment authorization are
     // independent concerns: being in stock doesn't guarantee funds clear.

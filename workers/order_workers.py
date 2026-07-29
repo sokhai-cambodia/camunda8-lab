@@ -35,7 +35,7 @@ async def main() -> None:
         logger.info("Validated order %s (%s x%s)", orderId, item, quantity)
 
     # No "determine-stock" job worker here -- the in-stock decision is now a
-    # DMN business rule task (dmn/stock-check.dmn) instead of inline Python.
+    # DMN business rule task (process/dmn/stock-check.dmn) instead of inline Python.
 
     # No "charge-payment" job worker here -- that step is now handled by the
     # built-in REST connector configured directly on the BPMN task, which
