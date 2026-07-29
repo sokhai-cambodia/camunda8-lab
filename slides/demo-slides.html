@@ -326,7 +326,55 @@
     </div>
   </section>
 
-  <!-- 4 : WORKER PATTERN -->
+  <!-- 4 : ARCHITECTURE -->
+  <section class="slide">
+    <p class="eyebrow">Under the hood</p>
+    <h2>Five processes, three languages.</h2>
+    <p class="lede">None of them know the others' internals — only the contracts.</p>
+    <div class="diagram-wrap" style="margin-top: calc(var(--step) * 4);">
+      <svg viewBox="0 0 1200 300" width="1200" height="300">
+        <rect class="flow-box accent" x="460" y="10" width="280" height="60" rx="6"/>
+        <text class="flow-text" x="600" y="34" text-anchor="middle">orchestration</text>
+        <text class="flow-label" x="600" y="50" text-anchor="middle">Zeebe :26500 gRPC · Operate/Tasklist :8080</text>
+
+        <rect class="flow-box" x="60" y="120" width="230" height="54" rx="5"/>
+        <text class="flow-text" x="175" y="142" text-anchor="middle">order_service.py</text>
+        <text class="flow-label" x="175" y="158" text-anchor="middle">Python · FastAPI · :8000</text>
+
+        <rect class="flow-box" x="60" y="210" width="230" height="54" rx="5"/>
+        <text class="flow-text" x="175" y="232" text-anchor="middle">order_workers.py</text>
+        <text class="flow-label" x="175" y="248" text-anchor="middle">Python · pyzeebe · long-poll</text>
+
+        <rect class="flow-box" x="910" y="120" width="230" height="54" rx="5"/>
+        <text class="flow-text" x="1025" y="142" text-anchor="middle">connectors</text>
+        <text class="flow-label" x="1025" y="158" text-anchor="middle">:8086 · outbound + inbound webhook</text>
+
+        <rect class="flow-box connector" x="910" y="210" width="230" height="54" rx="5"/>
+        <text class="flow-text" x="1025" y="232" text-anchor="middle">payment_service.js</text>
+        <text class="flow-label" x="1025" y="248" text-anchor="middle">Node · Express · :8001</text>
+
+        <path class="flow-line" d="M290 142 L460 60" marker-end="url(#arrArch)"/>
+        <text class="flow-label" x="350" y="95" text-anchor="middle">gRPC: deploy / start / cancel</text>
+
+        <path class="flow-line" d="M290 225 L460 90" marker-end="url(#arrArch)"/>
+        <text class="flow-label" x="235" y="185" text-anchor="middle">gRPC: poll / activate / complete</text>
+
+        <path class="flow-line" d="M740 60 L910 145" marker-end="url(#arrArch)"/>
+        <text class="flow-label" x="850" y="95" text-anchor="middle">gRPC job (built-in worker)</text>
+
+        <path class="flow-line" d="M1025 174 L1025 210" marker-end="url(#arrArch)"/>
+        <text class="flow-label" x="1140" y="195" text-anchor="middle">HTTP POST</text>
+
+        <defs>
+          <marker id="arrArch" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L6,3 L0,6 z" fill="currentColor" style="color:var(--muted)"/>
+          </marker>
+        </defs>
+      </svg>
+    </div>
+  </section>
+
+  <!-- 5 : WORKER PATTERN -->
   <section class="slide">
     <p class="eyebrow">How a step runs</p>
     <h2>Code, or configuration.</h2>
@@ -426,13 +474,13 @@
     </div>
   </section>
 
-  <!-- 5 : THE PROCESS -->
+  <!-- 6 : THE PROCESS -->
   <section class="slide">
     <p class="eyebrow">Today's process</p>
     <h2>Order Fulfillment</h2>
     <p class="lede" style="margin-top:0;">Same happy path as before — now with six ways an instance can actually end.</p>
     <div class="diagram-wrap">
-      <svg viewBox="0 0 1340 430" width="1340" height="430">
+      <svg viewBox="-60 0 1400 430" width="1400" height="430">
         <circle class="flow-event" cx="30" cy="70" r="16"/>
         <text class="flow-text" x="30" y="112" text-anchor="middle">Order Received</text>
 
@@ -516,7 +564,7 @@
     </div>
   </section>
 
-  <!-- 6 : RUN OF SHOW -->
+  <!-- 7 : RUN OF SHOW -->
   <section class="slide">
     <p class="eyebrow">Run of show</p>
     <h2>Watch it live.</h2>
@@ -545,7 +593,7 @@
     </div>
   </section>
 
-  <!-- 7 : FAILURE -->
+  <!-- 8 : FAILURE -->
   <section class="slide">
     <p class="eyebrow">When it breaks</p>
     <h2>No crash. No redeploy.</h2>
@@ -567,7 +615,7 @@
     </div>
   </section>
 
-  <!-- 8 : MORE BRANCHES -->
+  <!-- 9 : MORE BRANCHES -->
   <section class="slide">
     <p class="eyebrow">Not every incident is a bug</p>
     <h2>Three more endings.</h2>
@@ -592,7 +640,7 @@
     </div>
   </section>
 
-  <!-- 9 : WHY IT MATTERS -->
+  <!-- 10 : WHY IT MATTERS -->
   <section class="slide">
     <p class="eyebrow">Why it matters</p>
     <h2>What you actually get.</h2>
@@ -600,13 +648,13 @@
       <ul class="points">
         <li><span class="tag">see</span><span class="body"><b>Every instance, live.</b> Not logs to reconstruct — an actual, current picture of what's running and where it's stuck.</span></li>
         <li><span class="tag">change</span><span class="body"><b>Reroute without a deploy.</b> The gateway condition reads a DMN decision, not a code branch.</span></li>
-        <li><span class="tag">mix</span><span class="body"><b>Any language, per step.</b> Today's workers are Python — they could be Java or Node right next to them.</span></li>
+        <li><span class="tag">mix</span><span class="body"><b>Any language, per step.</b> The order-triggering service is Python; the payment service the connector calls is Node — proven, not hypothetical.</span></li>
         <li><span class="tag">trust</span><span class="body"><b>Nothing silently drops.</b> A failed job becomes a visible, fixable incident; a business failure becomes a modeled boundary event — never a swallowed exception.</span></li>
       </ul>
     </div>
   </section>
 
-  <!-- 10 : CLOSE -->
+  <!-- 11 : CLOSE -->
   <section class="slide">
     <p class="eyebrow">Thanks</p>
     <h1>Questions?</h1>
@@ -619,7 +667,7 @@
 <div class="dots" id="dots"></div>
 <div class="hud">
   <button class="navbtn" id="prev" aria-label="Previous slide">‹</button>
-  <span class="count" id="count">1 / 10</span>
+  <span class="count" id="count">1 / 11</span>
   <button class="navbtn" id="next" aria-label="Next slide">›</button>
 </div>
 
