@@ -1,8 +1,8 @@
-"""Generates slides/camunda8-demo.pptx for the CTO show-and-tell.
+"""Generates slides/camunda8-demo.pptx from the same content as demo-slides.html.
 
 Run: .venv/Scripts/python slides/build_pptx.py
 Not part of the runtime lab -- a one-off deck builder, kept for easy re-runs
-if the process/screenshots change again.
+if the process diagram or slide content changes again.
 """
 
 from pathlib import Path
@@ -26,10 +26,8 @@ OK = RGBColor(0x2F, 0x8F, 0x5B)
 FONT_BODY = "Segoe UI"
 FONT_MONO = "Consolas"
 
-SCREENSHOT_DIR = Path(r"C:\Users\Admin\AppData\Local\Temp\claude-chrome-screenshots-JE6xI2")
-PROCESS_DIAGRAM = SCREENSHOT_DIR / "screenshot-1785328446533-3.png"
-PANEL_WORKER = SCREENSHOT_DIR / "screenshot-1785328479201-5.png"
-PANEL_CONNECTOR = SCREENSHOT_DIR / "screenshot-1785328484487-6.png"
+ASSETS_DIR = Path(__file__).resolve().parent / "assets"
+PROCESS_DIAGRAM = ASSETS_DIR / "process-diagram.png"
 
 prs = Presentation()
 prs.slide_width = Inches(13.333)
