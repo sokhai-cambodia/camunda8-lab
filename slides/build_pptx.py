@@ -1,4 +1,4 @@
-"""Generates slides/camunda8-demo.pptx from the same content as demo-slides.html.
+"""Generates slides/camunda8-order-fulfillment.pptx from the same content as order-fulfillment-slides.html.
 
 Run: .venv/Scripts/python slides/build_pptx.py
 Not part of the runtime lab -- a one-off deck builder, kept for easy re-runs
@@ -252,7 +252,7 @@ payment_box = rect(s, Inches(9.5), row3_y, Inches(3.2), Inches(0.8),
                     "payment_service.js", "Node · Express · :8001", accent=True)
 
 arrow(s, Inches(3.9), row2_y + Inches(0.15), Inches(4.4), arch_y + Inches(0.55),
-      "gRPC: deploy / start / cancel", row2_y - Inches(0.32))
+      "gRPC: start / cancel", row2_y - Inches(0.32))
 arrow(s, Inches(3.9), row3_y + Inches(0.4), Inches(4.4), arch_y + Inches(0.75),
       "gRPC: poll / activate / complete", row3_y + Inches(0.85))
 arrow(s, Inches(8.9), arch_y + Inches(0.55), Inches(9.5), row2_y + Inches(0.15),
@@ -352,7 +352,7 @@ add_eyebrow(s, "Why it matters")
 add_title(s, "What you actually get.")
 points = [
     ("see", "Every instance, live.", "We forced a real incident earlier -- Operate showed the exact failed variable and a one-click retry, not a log line to go reconstruct after the fact."),
-    ("change", "Reroute without a deploy.", "The in-stock threshold is a row in dmn/stock-check.dmn, not a Python if -- change the number, redeploy the table, zero code review."),
+    ("change", "Reroute without a deploy.", "The in-stock threshold is a row in process/dmn/stock-check.dmn, not a Python if -- change the number, redeploy the table, zero code review."),
     ("mix", "Any language, per step.", "The order-triggering service is Python; the payment service the connector calls is Node -- proven today, not hypothetical."),
     ("trust", "Nothing silently drops.", "Two different failure modes, two different outcomes: an unhandled bug becomes a visible incident; a declined payment becomes a modeled path, not a crash. We triggered both."),
 ]
@@ -402,6 +402,6 @@ add_lede(s, "Repo, BPMN file, and worker code are all right here -- happy to wal
 add_text(s, Inches(0.7), Inches(5.3), Inches(9), Inches(0.4),
           "camunda8-lab / bpmn / dmn / forms / workers / services_python / services_node", 13, color=MUTED, font=FONT_MONO)
 
-out = Path(__file__).resolve().parent / "camunda8-demo.pptx"
+out = Path(__file__).resolve().parent / "camunda8-order-fulfillment.pptx"
 prs.save(str(out))
 print(f"Saved {out}")

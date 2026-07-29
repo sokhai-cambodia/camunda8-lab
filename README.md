@@ -1,7 +1,8 @@
-# Camunda 8 Lab — Order Fulfillment Demo
+# Camunda 8 Order Fulfillment Lab
 
-Hands-on Camunda 8 environment + a runnable example, built to get you demo-confident in
-1-2 hours. Follow the blocks in order — each one is a checkpoint, not just reading material.
+A hands-on Camunda 8 environment plus a runnable example process, covering the platform
+end to end in 1-2 hours. Follow the sections in order — each one is a checkpoint, not just
+reading material.
 
 Stack: Docker Compose (self-managed, Camunda 8.9.13, H2 storage — no Elasticsearch needed) +
 a Python job worker (`pyzeebe`) + the built-in REST and Webhook Connectors + a DMN decision
@@ -11,15 +12,17 @@ standing up Elasticsearch or Keycloak (Optimize, Identity, and Web Modeler are o
 for that reason).
 
 ```
-bpmn/             order-fulfillment.bpmn — the executable process
-dmn/              stock-check.dmn — the in-stock decision table (business rule task)
-forms/            confirm-delivery.form — the Camunda Form shown in Tasklist
+process/          the process definition bundle -- deployed together as one versioned unit
+  bpmn/             order-fulfillment.bpmn — the executable process
+  dmn/              stock-check.dmn — the in-stock decision table (business rule task)
+  forms/            confirm-delivery.form — the Camunda Form shown in Tasklist
 docker-compose/   Camunda stack: orchestration (Zeebe+Operate+Tasklist) + connectors
 workers/          order_workers.py — job workers (reserve-item, validate-order, handle-payment-failure,
                   ship-order, escalate-to-manager, cancel-order, notify-backorder)
 services_python/  order_service.py — FastAPI, triggers/cancels instances via the Zeebe client
 services_node/    payment_service.js — Express, called by the Charge Payment connector
-slides/           demo-slides.html + camunda8-demo.pptx
+scripts/          deploy.py — pushes process/ (bpmn+dmn+forms) to Zeebe (run after editing any of them)
+slides/           order-fulfillment-slides.html + camunda8-order-fulfillment.pptx
 requirements.txt  shared venv for workers/ and services_python/
 ```
 
@@ -32,7 +35,7 @@ prove that: the connector that calls it doesn't know or care that it's Node inst
 ## Architecture & Lifecycle
 
 Read this before Block 1 if you want the big picture first, or after Block 6 if you'd
-rather run the demo before reading how it works underneath.
+rather run it hands-on before reading how it works underneath.
 
 ### Architecture — what's running, and who talks to whom
 
@@ -43,7 +46,8 @@ other's internals — only the contracts (job types, HTTP routes, message names)
 |---|---|---|---|---|
 | `orchestration` container | Java (Zeebe) | `26500` gRPC, `8080` REST/UI | — | The engine itself, plus Operate and Tasklist |
 | `connectors` container | Java | `8086` | gRPC (built-in worker) | Executes outbound connector calls; hosts inbound webhooks |
-| `services_python/order_service.py` | Python (FastAPI) | `8000` | gRPC (`pyzeebe` client) | Deploys resources; starts/cancels instances |
+| `services_python/order_service.py` | Python (FastAPI) | `8000` | gRPC (`pyzeebe` client) | Starts/cancels instances |
+| `scripts/deploy.py` | Python (`pyzeebe`) | — (runs once, exits) | gRPC (`pyzeebe` client) | Deploys the BPMN + DMN + form bundle |
 | `workers/order_workers.py` | Python (`pyzeebe`) | — (long-polls, no server) | gRPC (job worker) | Executes every task type *except* the connector-backed ones |
 | `services_node/payment_service.js` | Node (Express) | `8001` | never — plain HTTP only | Called by the outbound connector; doesn't know Camunda exists |
 
@@ -62,13 +66,20 @@ Inbound connector:   external caller --(HTTP POST)--> connectors container
 
 ### Lifecycle — one order, start to finish
 
-**Startup, once, in any order:**
+**Startup, once, in any order — except `deploy.py`, which needs Zeebe up first:**
 1. `docker compose up -d` — Zeebe + Operate + Tasklist + Connectors come up.
 2. `order_workers.py` opens a gRPC connection and starts **long-polling**: "give me jobs of
    type X." Nothing is registered anywhere in advance — it just keeps asking.
 3. `payment_service.js` starts as a plain HTTP server. It has no idea Camunda exists.
-4. `order_service.py` starts and **deploys** the BPMN + DMN + form as one versioned bundle
-   into Zeebe. This defines the process (like registering a class) — no instances exist yet.
+4. `order_service.py` starts and opens its own gRPC connection — it does **not** deploy
+   anything itself.
+5. `python scripts/deploy.py` **deploys** the BPMN + DMN + form as one versioned bundle into
+   Zeebe. This defines the process (like registering a class) — no instances exist yet.
+   Deployment is deliberately decoupled from `order_service.py`'s process so that editing and
+   redeploying the BPMN/DMN/form never requires restarting the running API — rerun
+   `scripts/deploy.py` any time after an edit and the next `POST /orders` picks up the new
+   version automatically (Zeebe resolves `bpmn_process_id` to whichever version is latest;
+   in-flight instances stay on the version they started on).
 
 **Per order, every time `POST /orders` runs:**
 1. `order_service.py` asks Zeebe to create an instance. The token starts, moves to
@@ -111,7 +122,7 @@ the moment that makes boundary events click for people who've only seen linear f
 - **Operate** — web UI to monitor running/completed process instances and fix **incidents** (failed jobs).
 - **Tasklist** — web UI for humans to complete **user tasks** (the manual steps in a process).
 
-**One-liner for the demo audience:** "BPMN defines *what* should happen and in what order; job workers and connectors define *how* each step actually gets done; Zeebe guarantees the process moves forward correctly even across crashes, retries, and scale."
+**Summary:** BPMN defines *what* should happen and in what order; job workers and connectors define *how* each step actually gets done; Zeebe guarantees the process moves forward correctly even across crashes, retries, and scale.
 
 ## Block 2 — Start the stack (15 min)
 
@@ -135,7 +146,9 @@ Once ready, open:
 
 ## Block 3 — The model (15 min)
 
-Open `bpmn/order-fulfillment.bpmn` in [Camunda Desktop Modeler](https://camunda.com/download/modeler/)
+![Order Fulfillment process diagram](slides/assets/process-diagram.svg)
+
+Open `process/bpmn/order-fulfillment.bpmn` in [Camunda Desktop Modeler](https://camunda.com/download/modeler/)
 or drag it into https://demo.bpmn.io to see it visually (good for a slide screenshot).
 
 Flow: **Order Received** → *Reserve Items* (multi-instance job worker, one per line item) →
@@ -149,10 +162,10 @@ Flow: **Order Received** → *Reserve Items* (multi-instance job worker, one per
   - error boundary (payment declined) → *Handle Payment Failure* → **Order Payment Failed**
 - No → *Notify Backorder* (job worker) → **Order Backordered**
 
-Talking points:
-- The gateway condition (`inStock = true`) reads a process variable that the *Determine Stock Status* business rule task set by calling `dmn/stock-check.dmn` — open that decision table in Modeler to show the same logic as a table instead of code.
+Notes:
+- The gateway condition (`inStock = true`) reads a process variable that the *Determine Stock Status* business rule task set by calling `process/dmn/stock-check.dmn` — open that decision table in Modeler to show the same logic as a table instead of code.
 - Click "Charge Payment" and open its properties panel — it has no custom code behind it, just a configured URL/method/body, plus an `errorExpression` header that turns an HTTP 402 into a BPMN error for the boundary event attached to it. Contrast this with "Ship Order," which is a real job worker in `workers/order_workers.py`.
-- Click "Confirm Delivery" — its Form tab shows `forms/confirm-delivery.form`, and it has three ways out: complete it, let the timer boundary fire, or hit it with the cancel webhook. Same task, three different exits.
+- Click "Confirm Delivery" — its Form tab shows `process/forms/confirm-delivery.form`, and it has three ways out: complete it, let the timer boundary fire, or hit it with the cancel webhook. Same task, three different exits.
 - "Reserve Items" has the multi-instance marker (three vertical bars) in its bottom-left corner — click it and open the "Multi-instance" tab to see `items` as the input collection.
 
 ## Block 4 — Run the workers and services (25 min)
@@ -185,10 +198,19 @@ In a **third** terminal, start the service that triggers instances:
 .venv\Scripts\Activate.ps1
 uvicorn services_python.order_service:app --port 8000
 ```
-On startup this deploys the BPMN, DMN, and form resources once and exposes `POST /orders`
-plus `POST /orders/{order_id}/cancel`. Open http://localhost:8000/docs for the interactive
-Swagger UI — good for the demo, since you can trigger (and cancel) orders by clicking
-"Try it out" instead of typing curl live.
+This exposes `POST /orders` plus `POST /orders/{order_id}/cancel`, but it does **not** deploy
+anything by itself. Open http://localhost:8000/docs for the interactive Swagger UI — convenient
+for testing, since you can trigger (and cancel) orders by clicking "Try it out" instead of
+typing curl commands.
+
+Before your first order, deploy the BPMN/DMN/form bundle (one-time, or again any time you edit
+one of those files):
+```powershell
+python scripts/deploy.py
+```
+`order_service.py` starts a process by `bpmn_process_id`, not by file path, so it always runs
+whatever Zeebe currently has as the latest deployed version — rerun `scripts/deploy.py` after
+edits and there's no need to restart `order_service.py`.
 
 ## Block 5 — Run it end to end (15 min)
 
@@ -207,9 +229,9 @@ curl -X POST http://localhost:8000/orders -H "Content-Type: application/json" -d
 ```
 `quantity=15` > 10 → gateway routes to *Notify Backorder* instead.
 
-## Block 6 — Failure demo (10 min)
+## Block 6 — Failure handling (10 min)
 
-This is the part that actually impresses a technical audience: show what happens when
+This is the part that matters most for a technical audience: what happens when
 something breaks.
 
 ```powershell
@@ -222,7 +244,7 @@ curl -X POST http://localhost:8000/orders -H "Content-Type: application/json" -d
 3. Click the failed variable, edit `quantity` to a valid value (e.g. `5`) directly in Operate.
 4. Click **Retry** — the job re-executes and the instance continues normally.
 
-Talking point: no code deploy, no restart, no lost work — you fixed bad data and resumed a
+Note: no code deploy, no restart, no lost work — you fixed bad data and resumed a
 running process from where it failed.
 
 ## Block 7 — Three more branches: decline, cancel, escalate (15 min)
@@ -250,7 +272,7 @@ curl -X POST http://localhost:8000/orders/ORD-2002/cancel
 `/cancel` POSTs to the connectors container's inbound Webhook endpoint
 (`http://localhost:8086/inbound/order-canceled`), which correlates by `orderId` to the
 message boundary event on "Confirm Delivery" and routes to `cancel-order`. Ends at
-**Order Canceled**. Talking point: this is the same mechanism a real system (e.g. a
+**Order Canceled**. Note: this is the same mechanism a real system (e.g. a
 customer portal calling a webhook) would use to interrupt a running process from outside.
 
 **Timeout (timer boundary event).** Start another order and just leave "Confirm Delivery"
@@ -261,17 +283,18 @@ needed for this one; it's the passage of time itself that's the trigger.
 ## Block 8 — Slides
 
 See `slides/` — two versions of the same deck, kept in sync:
-- `demo-slides.html` — open in a browser and present directly (arrow keys / click to navigate).
-- `camunda8-demo.pptx` — same content, native PowerPoint, if that's what your team presents
+- `order-fulfillment-slides.html` — open in a browser and present directly (arrow keys / click to navigate).
+- `camunda8-order-fulfillment.pptx` — same content, native PowerPoint, if that's what your team presents
   from. Regenerate it after editing the HTML deck with `python slides/build_pptx.py`
   (needs `pip install python-pptx` once).
 
-## Block 9 — Dry run (10 min)
+## Block 9 — Full walkthrough (10 min)
 
-Run the full sequence solo, end to end, before the real demo: stack up → deploy → happy
-path → backorder path → incident → retry → decline → cancel → escalate. Time yourself. If
-Docker startup is slow, start `docker compose up -d` a few minutes before your actual demo
-slot.
+Run the full sequence end to end as a final check: stack up → deploy → happy path →
+backorder path → incident → retry → decline → cancel → escalate. Useful as a smoke test
+after any change, or as a rehearsal before presenting this to others. Docker's first
+startup can be slow — start `docker compose up -d` a few minutes ahead of time if you're
+on a schedule.
 
 ## Shutting down
 

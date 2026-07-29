@@ -354,7 +354,7 @@
         <text class="flow-label" x="1025" y="248" text-anchor="middle">Node · Express · :8001</text>
 
         <path class="flow-line" d="M290 142 L460 60" marker-end="url(#arrArch)"/>
-        <text class="flow-label" x="350" y="95" text-anchor="middle">gRPC: deploy / start / cancel</text>
+        <text class="flow-label" x="350" y="95" text-anchor="middle">gRPC: start / cancel</text>
 
         <path class="flow-line" d="M290 225 L460 90" marker-end="url(#arrArch)"/>
         <text class="flow-label" x="235" y="185" text-anchor="middle">gRPC: poll / activate / complete</text>
@@ -647,7 +647,7 @@
     <div class="content">
       <ul class="points">
         <li><span class="tag">see</span><span class="body"><b>Every instance, live.</b> We forced a real incident earlier — Operate showed the exact failed variable and a one-click retry, not a log line to go reconstruct after the fact.</span></li>
-        <li><span class="tag">change</span><span class="body"><b>Reroute without a deploy.</b> The in-stock threshold is a row in <code>dmn/stock-check.dmn</code>, not a Python <code>if</code> — change the number, redeploy the table, zero code review.</span></li>
+        <li><span class="tag">change</span><span class="body"><b>Reroute without a deploy.</b> The in-stock threshold is a row in <code>process/dmn/stock-check.dmn</code>, not a Python <code>if</code> — change the number, redeploy the table, zero code review.</span></li>
         <li><span class="tag">mix</span><span class="body"><b>Any language, per step.</b> The order-triggering service is Python; the payment service the connector calls is Node — proven today, not hypothetical.</span></li>
         <li><span class="tag">trust</span><span class="body"><b>Nothing silently drops.</b> Two different failure modes, two different outcomes: an unhandled bug becomes a visible incident; a declined payment becomes a modeled path, not a crash. We triggered both.</span></li>
       </ul>
