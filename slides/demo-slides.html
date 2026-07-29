@@ -646,15 +646,40 @@
     <h2>What you actually get.</h2>
     <div class="content">
       <ul class="points">
-        <li><span class="tag">see</span><span class="body"><b>Every instance, live.</b> Not logs to reconstruct — an actual, current picture of what's running and where it's stuck.</span></li>
-        <li><span class="tag">change</span><span class="body"><b>Reroute without a deploy.</b> The gateway condition reads a DMN decision, not a code branch.</span></li>
-        <li><span class="tag">mix</span><span class="body"><b>Any language, per step.</b> The order-triggering service is Python; the payment service the connector calls is Node — proven, not hypothetical.</span></li>
-        <li><span class="tag">trust</span><span class="body"><b>Nothing silently drops.</b> A failed job becomes a visible, fixable incident; a business failure becomes a modeled boundary event — never a swallowed exception.</span></li>
+        <li><span class="tag">see</span><span class="body"><b>Every instance, live.</b> We forced a real incident earlier — Operate showed the exact failed variable and a one-click retry, not a log line to go reconstruct after the fact.</span></li>
+        <li><span class="tag">change</span><span class="body"><b>Reroute without a deploy.</b> The in-stock threshold is a row in <code>dmn/stock-check.dmn</code>, not a Python <code>if</code> — change the number, redeploy the table, zero code review.</span></li>
+        <li><span class="tag">mix</span><span class="body"><b>Any language, per step.</b> The order-triggering service is Python; the payment service the connector calls is Node — proven today, not hypothetical.</span></li>
+        <li><span class="tag">trust</span><span class="body"><b>Nothing silently drops.</b> Two different failure modes, two different outcomes: an unhandled bug becomes a visible incident; a declined payment becomes a modeled path, not a crash. We triggered both.</span></li>
       </ul>
     </div>
   </section>
 
-  <!-- 11 : CLOSE -->
+  <!-- 11 : HONEST GAPS -->
+  <section class="slide">
+    <p class="eyebrow">Before anyone asks</p>
+    <h2>What this doesn't prove yet.</h2>
+    <p class="lede">Breadth of BPMN concepts is covered. Two different kinds of gap remain, and they're not the same kind of problem.</p>
+    <div class="split" style="margin-top: calc(var(--step) * 4);">
+      <div class="before">
+        <b style="color: var(--muted);">Feature gaps</b>
+        <p>Parallel / inclusive gateways — only the exclusive gateway exists today.</p>
+        <p>Compensation events — Cancel Order doesn't roll back a reservation or a charge.</p>
+        <p>Process versioning &amp; migration — deploying v2 of a running process, live.</p>
+      </div>
+      <div class="after">
+        <b style="color: var(--accent);">Production gaps</b>
+        <p>Auth — still the default <code>demo</code>/<code>demo</code> login; Identity untouched.</p>
+        <p>Storage — H2, single-node, file-based; production needs the Elasticsearch exporter or SaaS.</p>
+        <p>Observability &amp; HA — Operate's UI only, no alerting; one broker container, not a cluster.</p>
+      </div>
+    </div>
+    <p class="lede" style="margin-top: calc(var(--step) * 4); font-size: 1rem;">
+      The left column is "haven't gotten to it yet." The right column is "deliberately out of
+      scope for a local demo" — worth being explicit about which is which.
+    </p>
+  </section>
+
+  <!-- 12 : CLOSE -->
   <section class="slide">
     <p class="eyebrow">Thanks</p>
     <h1>Questions?</h1>
@@ -667,7 +692,7 @@
 <div class="dots" id="dots"></div>
 <div class="hud">
   <button class="navbtn" id="prev" aria-label="Previous slide">‹</button>
-  <span class="count" id="count">1 / 11</span>
+  <span class="count" id="count">1 / 12</span>
   <button class="navbtn" id="next" aria-label="Next slide">›</button>
 </div>
 

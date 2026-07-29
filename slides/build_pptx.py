@@ -143,6 +143,19 @@ def circle(slide, cx, cy, r, filled=False):
     return shp
 
 
+def gap_column(slide, left, header, header_color, items):
+    add_text(slide, left, Inches(2.75), Inches(5.7), Inches(0.35), header, 13, color=header_color,
+              bold=True, font=FONT_MONO)
+    y = Inches(3.2)
+    for head, body in items:
+        box = slide.shapes.add_textbox(left, y, Inches(5.7), Inches(0.9))
+        tf = box.text_frame; tf.word_wrap = True
+        p = tf.paragraphs[0]
+        r1 = p.add_run(); r1.text = head + " -- "; r1.font.bold = True; r1.font.size = Pt(13); r1.font.color.rgb = INK; r1.font.name = FONT_BODY
+        r2 = p.add_run(); r2.text = body; r2.font.size = Pt(13); r2.font.color.rgb = MUTED; r2.font.name = FONT_BODY
+        y += Inches(0.95)
+
+
 # ---------------------------------------------------------------- Slide 1: Title
 s = add_slide()
 bar = s.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, 0, prs.slide_width, Inches(0.08))
@@ -338,10 +351,10 @@ s = add_slide()
 add_eyebrow(s, "Why it matters")
 add_title(s, "What you actually get.")
 points = [
-    ("see", "Every instance, live.", "Not logs to reconstruct -- an actual, current picture of what's running and where it's stuck."),
-    ("change", "Reroute without a deploy.", "The gateway condition reads a DMN decision, not a code branch."),
-    ("mix", "Any language, per step.", "The order-triggering service is Python; the payment service the connector calls is Node -- proven, not hypothetical."),
-    ("trust", "Nothing silently drops.", "A failed job becomes a visible, fixable incident; a business failure becomes a modeled boundary event."),
+    ("see", "Every instance, live.", "We forced a real incident earlier -- Operate showed the exact failed variable and a one-click retry, not a log line to go reconstruct after the fact."),
+    ("change", "Reroute without a deploy.", "The in-stock threshold is a row in dmn/stock-check.dmn, not a Python if -- change the number, redeploy the table, zero code review."),
+    ("mix", "Any language, per step.", "The order-triggering service is Python; the payment service the connector calls is Node -- proven today, not hypothetical."),
+    ("trust", "Nothing silently drops.", "Two different failure modes, two different outcomes: an unhandled bug becomes a visible incident; a declined payment becomes a modeled path, not a crash. We triggered both."),
 ]
 y = Inches(2.3)
 for tag, head, body in points:
@@ -358,29 +371,26 @@ for tag, head, body in points:
     y += Inches(1.15)
 footer(s, 8)
 
-# ---------------------------------------------------------------- Slide 9: What's next
+# ---------------------------------------------------------------- Slide 9: What this doesn't prove yet
 s = add_slide()
-add_eyebrow(s, "Honest gaps")
-add_title(s, "What I'd explore next.")
-add_lede(s, "Breadth is covered. These are the remaining depth items -- none need new infrastructure.",
+add_eyebrow(s, "Before anyone asks")
+add_title(s, "What this doesn't prove yet.")
+add_lede(s, "Breadth of BPMN concepts is covered. Two different kinds of gap remain, and they're not the same kind of problem.",
          top=Inches(1.85))
-nexts = [
-    ("Parallel / inclusive gateways", "AND/OR splits -- today there's only the exclusive gateway."),
-    ("Compensation events", "The \"undo\" pattern -- Cancel Order doesn't yet roll back a reservation or a charge."),
-    ("Message start events", "Starting an instance from an external event, not just a REST call."),
-    ("Process versioning & migration", "Deploying v2 of a running process and migrating in-flight instances."),
-    ("A second job-worker language", "payment_service.js proved connector-called services are polyglot; order_workers.py is still Python-only."),
-]
-y = Inches(2.55)
-for head, body in nexts:
-    dot = s.shapes.add_shape(MSO_SHAPE.OVAL, Inches(0.75), y + Inches(0.08), Inches(0.12), Inches(0.12))
-    dot.fill.solid(); dot.fill.fore_color.rgb = ACCENT; dot.line.fill.background(); dot.shadow.inherit = False
-    box = s.shapes.add_textbox(Inches(1.1), y - Inches(0.05), Inches(11), Inches(0.85))
-    tf = box.text_frame; tf.word_wrap = True
-    p = tf.paragraphs[0]
-    r1 = p.add_run(); r1.text = head + "  "; r1.font.bold = True; r1.font.size = Pt(14.5); r1.font.color.rgb = INK; r1.font.name = FONT_BODY
-    r2 = p.add_run(); r2.text = body; r2.font.size = Pt(14.5); r2.font.color.rgb = MUTED; r2.font.name = FONT_BODY
-    y += Inches(0.85)
+gap_column(s, Inches(0.7), "FEATURE GAPS", MUTED, [
+    ("Parallel / inclusive gateways", "only the exclusive gateway exists today."),
+    ("Compensation events", "Cancel Order doesn't roll back a reservation or a charge."),
+    ("Process versioning & migration", "deploying v2 of a running process, live."),
+])
+gap_column(s, Inches(6.9), "PRODUCTION GAPS", ACCENT, [
+    ("Auth", "still the default demo/demo login; Identity untouched."),
+    ("Storage", "H2, single-node, file-based; production needs the Elasticsearch exporter or SaaS."),
+    ("Observability & HA", "Operate's UI only, no alerting; one broker container, not a cluster."),
+])
+add_text(s, Inches(0.7), Inches(6.6), Inches(11.5), Inches(0.7),
+          'The left column is "haven\'t gotten to it yet." The right column is "deliberately out of '
+          'scope for a local demo" -- worth being explicit about which is which.',
+          12, color=MUTED, line_spacing=1.2)
 footer(s, 9)
 
 # ---------------------------------------------------------------- Slide 10: Close
