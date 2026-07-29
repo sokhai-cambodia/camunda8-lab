@@ -2,6 +2,8 @@
 # Single "orchestration" service = Zeebe (gRPC :26500) + Operate + Tasklist (both under :8080).
 # Uses file-based H2 storage (see configuration/application-h2.yaml) so no Elasticsearch is needed.
 # Source: adapted from https://github.com/camunda/camunda-distributions/tree/main/docker-compose/versions/camunda-8.9
+name: camunda8-lab
+
 services:
   camunda-data-init:
     image: camunda/camunda:${CAMUNDA_VERSION}
