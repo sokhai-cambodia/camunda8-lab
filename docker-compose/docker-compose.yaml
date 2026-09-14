@@ -51,7 +51,8 @@ services:
     ports:
       - "8086:8080"
     env_file:
-      - connector-secrets.txt
+      - path: connector-secrets.txt
+        required: false
       - path: .env
         required: true
     mem_limit: 512m

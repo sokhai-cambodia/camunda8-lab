@@ -11,6 +11,19 @@ README, the lab now touches every Camunda 8 modeling/runtime concept that doesn'
 standing up Elasticsearch or Keycloak (Optimize, Identity, and Web Modeler are out of scope
 for that reason).
 
+## Prerequisites
+
+- Docker Desktop (or Docker Engine) with **Compose v2** — `docker compose version` should print `v2.x`
+- Python 3.11+
+- Node.js 18+
+- `curl` (or any HTTP client) for the walkthrough commands
+- Free ports: `8080`, `8086`, `8000`, `8001`, `26500`, `9600`
+- ~1.5GB free disk on first run (pulls `camunda/camunda:8.9.13` and `camunda/connectors-bundle:8.9.6`)
+
+Commands below are shown for PowerShell (Windows). On macOS/Linux, swap `python` → `python3`
+and `.venv\Scripts\Activate.ps1` → `source .venv/bin/activate`; everything else (including the
+`curl` commands) runs unchanged in bash/zsh.
+
 ```
 process/          the process definition bundle -- deployed together as one versioned unit
   bpmn/             order-fulfillment.bpmn — the executable process
@@ -22,7 +35,7 @@ workers/          order_workers.py — job workers (reserve-item, validate-order
 services_python/  order_service.py — FastAPI, triggers/cancels instances via the Zeebe client
 services_node/    payment_service.js — Express, called by the Charge Payment connector
 scripts/          deploy.py — pushes process/ (bpmn+dmn+forms) to Zeebe (run after editing any of them)
-slides/           order-fulfillment-slides.html + camunda8-order-fulfillment.pptx
+slides/           camunda8_demo.pptx — the presentation deck
 requirements.txt  shared venv for workers/ and services_python/
 ```
 
@@ -282,11 +295,8 @@ needed for this one; it's the passage of time itself that's the trigger.
 
 ## Block 8 — Slides
 
-See `slides/` — two versions of the same deck, kept in sync:
-- `order-fulfillment-slides.html` — open in a browser and present directly (arrow keys / click to navigate).
-- `camunda8-order-fulfillment.pptx` — same content, native PowerPoint, if that's what your team presents
-  from. Regenerate it after editing the HTML deck with `python slides/build_pptx.py`
-  (needs `pip install python-pptx` once).
+See `slides/camunda8_demo.pptx` — a PowerPoint deck covering the same material, plus
+`slides/assets/` for the process diagram and architecture image used in it.
 
 ## Block 9 — Full walkthrough (10 min)
 
