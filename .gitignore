@@ -4,3 +4,4 @@ __pycache__/
 *.log
 node_modules/
 docker-compose/connector-secrets.txt
+.claude/settings.local.json
